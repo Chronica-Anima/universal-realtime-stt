@@ -1,0 +1,323 @@
+❯ During the test, I ran into the following problem: provider closed
+  connection, but I kept sending.                                           
+                                                                            
+  2026-02-19 15:53:30,088 WARNING:lib.stt_provider_deepgram:send_audio():   
+  [STT] Deepgram: cannot send audio, connection closed                      
+  2026-02-19 15:53:30,289 WARNING:lib.stt_provider_deepgram:send_audio():   
+  [STT] Deepgram: cannot send audio, connection closed                      
+  2026-02-19 15:53:30,489 WARNING:lib.stt_provider_deepgram:send_audio():   
+  [STT] Deepgram: cannot send audio, connection closed                      
+  2026-02-19 15:53:30,690 WARNING:lib.stt_provider_deepgram:send_audio():   
+  [STT] Deepgram: cannot send audio, connection closed                      
+  2026-02-19 15:53:30,891 WARNING:lib.stt_provider_deepgram:send_audio():   
+  [STT] Deepgram: cannot send audio, connection closed                      
+  2026-02-19 15:53:31,093 WARNING:lib.stt_provider_deepgram:send_audio():   
+  [STT] Deepgram: cannot send audio, connection closed                      
+  2026-02-19 15:53:31,293 WARNING:lib.stt_provider_deepgram:send_audio():   
+  [STT] Deepgram: cannot send audio, connection closed                      
+                                                                            
+  In such a case, the stt_session_task() should be torn down (however in a  
+  way that input and transcript output queues are unaffected (so no close   
+  is sent to the transcript queue), since in normal operation, one would    
+  try to first respawn the stt_session_task).                               
+                                                                            
+  However, for the benchmark, we want this to bubble up and correctly tear  
+  down everything (the wav stream and close the ingest (and mark the task   
+  as failed)). Please analyze, ask if anything is unclear and then propose  
+  a fix.                                                                    
+  ⎿  ⧉ Selected 1 lines from lib/stt.py in IntelliJ IDEA
+
+⏺ Let me read the relevant files before proposing anything.
+
+⏺ Read 2 files (ctrl+o to expand)
+
+⏺ Let me also read the other providers and the stream_wav/transcript_ingest
+  files to understand the full picture.
+
+⏺ Read 2 files (ctrl+o to expand)
+
+⏺ Let me also check the other providers to understand the full scope.
+
+⏺ Searched for 2 patterns (ctrl+o to expand)
+
+⏺ Good. I have the full picture now. Let me also check Speechmatics's send_audio
+   since it was slightly different:
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Now I have the complete picture. Let me lay out the diagnosis and proposed fix
+   clearly.
+
+  ---
+  Diagnosis
+
+  Root cause in stt.py: The orchestration does await sender first, then await 
+  receiver. When the provider closes early:
+
+  1. _recv_loop sets _closed, puts None in _events_q
+  2. _receiver exits (raises if error, or puts None in transcript_queue if clean
+   close) → receiver task is done
+  3. _sender keeps running — send_audio() no-ops silently (warns and returns),
+  so sender just keeps draining the audio queue for the full remaining real-time
+   duration
+  4. stt_session_task is stuck on await sender the whole time
+
+  Secondary problem in transcribe_wav_realtime: Even after stt_session_task
+  eventually exits, stream_wav_file was already awaited synchronously (not as a
+  task), so by the time we reach await stt_task the whole audio was already sent
+   anyway.
+
+  ---
+  Proposed Fix
+
+  Change 1 — lib/stt.py: await receiver first, cancel sender in finally
+
+  Swap the orchestration: the receiver is the natural completion signal (it
+  exits when the provider closes), and the sender becomes a background task that
+   gets cancelled when we're done.
+
+  # old
+  try:
+      await sender   # <-- blocks until all audio consumed, even if provider is 
+  gone
+      await receiver
+  finally:
+      ...
+
+  # new
+  try:
+      await receiver  # exits when provider closes (cleanly or with error)
+  finally:
+      if not sender.done():
+          sender.cancel()
+          try:
+              await sender          # lets sender's finally run end_audio() 
+  (silently fails if ws is gone)
+          except (asyncio.CancelledError, Exception):
+              pass
+
+  Normal flow still works: sender runs as a background task, calls end_audio(),
+  provider closes, receiver gets the close and finishes, await receiver returns,
+   sender is already done in the finally.
+
+  Error flow: receiver raises immediately, finally cancels sender (stops the
+  spam, leaves audio_queue items untouched for potential respawn). Since
+  receiver raised — no None is put in transcript_queue, so the queue stays open
+  for respawn.
+
+  Change 2 — helpers/transcribe.py: detect stt_task failure while streaming
+
+  stream_wav_file is awaited directly, so it runs concurrently with stt_task (a
+  background task). When stt_task fails and we cancel its internal sender,
+  nobody reads audio_queue anymore. We need to:
+
+  1. Stop streaming — add a done-callback on stt_task that clears running when
+  the task fails; stream_wav_file respects running in its chunk loop, so it
+  stops quickly
+  2. Swallow the stream error — the trailing silence may hit QueueFullError if
+  the queue filled; the real error is in stt_task
+  3. Signal ingest — since receiver raised (no None sent to transcript_queue),
+  we put None explicitly before re-raising, so ingest_task exits cleanly
+  4. Re-raise the provider error — propagates to transcribe_and_diff →
+  run_provider → marked as FAILED with the actual error message
+
+  ---
+  One thing to verify before I code this up: in the normal-operation case,
+  sender finishes before receiver (sender sends all audio + calls end_audio(),
+  which triggers provider close, then receiver gets the close). So when await 
+  receiver returns, sender is already done — the cancel in finally is a no-op. I
+   believe this is always true, but I want to confirm: is there any scenario
+  where you'd expect receiver to close before sender during a normal successful
+  run?
+
+✻ Cogitated for 7m 19s
+
+❯ ok, first thing - the _put_with_timeout() has aggressive crash when queue 
+   full and queue is small. so there is no need to kill wav stream          
+  explicitely. it will die fairly quickly if there is no consumer. for me   
+  this is ok. of course if is_running is cleared then it stops imediately,  
+  which is eve nbetter but one does not need to force it if it would be     
+  complicated. as for your question, to my understanding of the logic,      
+  under normal operations, receiver should never occur. the iterator shold  
+  not stop unless the connection is closed. so reciver finishing earlier is 
+   always signal of abnormal operation.                                     
+
+⏺ Perfect, that clarifies things nicely. So:
+
+  1. stream_wav_file self-destructs via QueueFullError within ~13s at worst (8s
+  to fill the queue + 5s timeout) — no need to force-stop it. The running
+  callback is a free improvement (cuts it to ~5s) but not critical.
+  2. Receiver finishing first = always abnormal — so the fix in stt.py is clean:
+   await receiver, cancel sender in finally.
+
+  Let me implement both changes.
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Now I'll make both changes:
+
+⏺ Update(lib/stt.py)
+  ⎿  Added 11 lines, removed 5 lines
+      105          logger.info("[STT] All tasks created, init successful,
+            awaiting sender...")
+      106  
+      107          try:
+      108 -            await sender  # finishes sending + end_audio() sig
+          -nals provider to close                                        
+      109 -            await receiver  # finishes when provider's events(
+          -) yields None                                                 
+      108 +            # Await receiver — it exits when the provider clos
+          +es (cleanly or with error).                                   
+      109 +            # Sender runs concurrently as a background task; i
+          +n normal operation it finishes                                
+      110 +            # first (sends all audio + end_audio()), then the 
+          +provider closes and receiver                                  
+      111 +            # exits. If the provider closes early (error), rec
+          +eiver exits first and we                                      
+      112 +            # cancel sender to stop it from spinning on a dead
+          + connection.                                                  
+      113 +            await receiver                                    
+      114          finally:
+      111 -            logger.debug("[STT] init_stt_once_provider(): reac
+          -hed finally.")                                                
+      115 +            logger.debug("[STT] stt_session_task(): reached fi
+          +nally, cancelling sender if still running.")                  
+      116              if not sender.done():
+      117                  sender.cancel()
+      114 -            if not receiver.done():                           
+      115 -                receiver.cancel()                             
+      118 +                try:                                          
+      119 +                    await sender                              
+      120 +                except (asyncio.CancelledError, Exception):   
+      121 +                    pass                                      
+
+⏺ Now also update the log message that referenced the old "awaiting sender" info
+   line:
+
+⏺ Update(lib/stt.py)
+  ⎿  Added 1 line, removed 1 line
+      102          logger.debug("[STT] Provider context entered, creating
+            sender/receiver tasks...")
+      103          sender = asyncio.create_task(_sender())
+      104          receiver = asyncio.create_task(_receiver())
+      105 -        logger.info("[STT] All tasks created, init successful,
+          - awaiting sender...")                                         
+      105 +        logger.info("[STT] All tasks created, init successful,
+          + awaiting receiver...")                                       
+      106  
+      107          try:
+      108              # Await receiver — it exits when the provider clos
+           es (cleanly or with error).
+
+⏺ Now the transcribe.py changes:
+
+⏺ Update(helpers/transcribe.py)
+  ⎿  Added 1 line, removed 1 line
+       5  from typing import Awaitable, Callable, Optional
+       6  
+       7  from helpers.diff_report import CustomMetricResult, DiffReport
+       8 -from helpers.stream_wav import stream_wav_file, logger         
+       8 +from helpers.stream_wav import stream_wav_file, QueueFullError,
+         + logger                                                        
+       9  from helpers.transcript_ingest import transcript_ingest_task
+      10  from lib.stt import stt_session_task
+      11  from lib.stt_provider import RealtimeSttProvider
+
+⏺ Update(helpers/transcribe.py)
+  ⎿  Added 25 lines, removed 11 lines
+      48      stt_task = asyncio.create_task(stt_session_task(provider, i
+          nput_audio_queue, output_transcript_queue, running))
+      49      ingest_task = asyncio.create_task(transcript_ingest_task(ru
+          nning, output_transcript_queue))
+      50  
+      51 -    await stream_wav_file(                                     
+      52 -        wav_path,                                              
+      53 -        input_audio_queue,                                     
+      54 -        chunk_ms,                                              
+      55 -        sample_rate,                                           
+      56 -        realtime_factor=realtime_factor,                       
+      57 -        silence=silence_s,                                     
+      58 -        running=running,                                       
+      51 +    # When STT exits early due to a provider error, clear `runn
+         +ing` so the wav                                                
+      52 +    # chunk loop stops on its next iteration instead of filling
+         + the queue.                                                    
+      53 +    stt_task.add_done_callback(                                
+      54 +        lambda t: running.clear() if not t.cancelled() and t.ex
+         +ception() else None                                            
+      55      )
+      56  
+      61 -    # At this point, streaming is completed and all chunks sent
+         -.                                                              
+      62 -    # Wait till STT session ends (task completes).             
+      63 -    await stt_task                                             
+      57 +    try:                                                       
+      58 +        await stream_wav_file(                                 
+      59 +            wav_path,                                          
+      60 +            input_audio_queue,                                 
+      61 +            chunk_ms,                                          
+      62 +            sample_rate,                                       
+      63 +            realtime_factor=realtime_factor,                   
+      64 +            silence=silence_s,                                 
+      65 +            running=running,                                   
+      66 +        )                                                      
+      67 +    except QueueFullError:                                     
+      68 +        pass  # STT exited early and cancelled its sender; queu
+         +e backed up. Real error is in stt_task.                        
+      69  
+      70 +    # Wait for STT to finish; propagate any provider error.    
+      71 +    try:                                                       
+      72 +        await stt_task                                         
+      73 +    except Exception:                                          
+      74 +        # _receiver raised without putting None in transcript_q
+         +ueue — signal ingest to stop.                                  
+      75 +        await output_transcript_queue.put(None)                
+      76 +        await ingest_task                                      
+      77 +        raise                                                  
+      78 +                                                               
+      79      # Similarly wait for the ingest loop to exit and collect dr
+          ained transcripts.
+      80      segments = await ingest_task
+      81      running.clear()
+
+⏺ Let me do a quick sanity check on both files:
+
+⏺ Read 2 files (ctrl+o to expand)
+
+⏺ Looks good. Let me verify the full stt.py for completeness:
+
+⏺ Read 1 file (ctrl+o to expand)
+
+⏺ Good. Here's a summary of what changed and why:
+
+  ---
+  lib/stt.py — swap orchestration
+
+  Before: await sender; await receiver — sender had to drain all remaining audio
+   before we noticed receiver was gone.
+
+  After: await receiver with sender cancelled in finally — receiver is the
+  natural completion signal (it only exits when the provider closes). Sender
+  runs as a background task; in normal operation it finishes first and is
+  already done by the time receiver exits. On early provider close, receiver
+  exits first, finally fires, and sender is cancelled immediately — stopping the
+   warning spam and exiting stt_session_task with the provider's exception.
+
+  Note: _receiver only reaches transcript_queue.put(None) on clean exit from the
+   async for. If the provider raised an error, the exception propagates out of
+  the loop without putting None — so the transcript queue stays open, consistent
+   with the respawn design.
+
+  helpers/transcribe.py — handle early stt_task failure
+
+  Three additions:
+  1. Done-callback clears running when stt_task fails → wav chunk loop stops on
+  next iteration (from ~13s wait down to ~5s trailing silence)
+  2. except QueueFullError: pass around stream_wav_file — if the callback didn't
+   fire in time and the queue backed up, we swallow that symptom and check
+  stt_task for the real error
+  3. except Exception around await stt_task — puts None in transcript queue
+  (since receiver didn't), drains ingest, then re-raises the provider error so
+  run_provider marks the file as FAILED with the right message
+
+✻ Worked for 3m 49s

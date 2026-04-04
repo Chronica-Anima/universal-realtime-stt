@@ -1,8 +1,25 @@
-# Test Report
+# Realtime STT Provider Test Report
 
 From 2026-02-19, using the most recent versions of the STT models available at that time.
 
 ## Results
+
+Average per provider results across 12 files listed in [Assets](#Assets). 
+
+| Provider                        | WER | CER | SER |
+|---------------------------------|-----|-----|-----|
+| Cartesia (ink-whisper)          | 37% | 28% | 31% |
+| Deepgram (nova-3)               | 38% | 27% | 40% |
+| ElevenLabs (scribe_v2_realtime) | 26% | 17% | 29% |
+| Google (GCP Speech-to-Text)     | 37% | 24% | 36% |
+| Speechmatics (v2 api)           | 23% | 13% | 19% |
+
+**SER:** Semantic error rate = LLM was used to extract facts from the 
+text and compare these to mask potentially irrelevant misspells and 
+evaluate how the STT result would be understood in a voice pipeline.
+
+**Note:** Files `witness_2134_8442-audio` and `witness_1719_14584-audio`
+were excluded from the total due to their unintelligibility.
 
 ---
 
@@ -22,22 +39,22 @@ Only assets belonging to: Příběhy 20. století (Post Bellum). Were selected.
 - OK: Voice is easy to understand in general, but small details like word endings cannot be definitely discerned even by a human listener.
 - Poor: Even human needs to exert great effort to figure out the general message, with many specific words being unintelligible.
 
-| File                               | Person                            | Event                                                                 | Quality | Link                                                                                                                                       |
-|------------------------------------|-----------------------------------|-----------------------------------------------------------------------|---------|--------------------------------------------------------------------------------------------------------------------------------------------|
-| 2022-10_Nesm%C4%9Bli...            | Zlata Bednářová                   | Nesměli bychom se vzít                                                | Poor    | [link](https://www.pametnaroda.cz/system/files/2022-10/Nesm%C4%9Bli%20bychom%20se%20vz%C3%ADt.mp3)                                         |
-| 2022-12_klip_0                     | RNDr., CSc. Adolf Absolon         | Nový domov v pohraničí                                                | Good    | [klip_0.mp3](https://www.pametnaroda.cz/system/files/2022-12/klip_0.mp3)                                                                   |
-| 2023-02_Adam3                      | Josef Adam                        | Sovětští vojáci se ve stodole prali o chleba                          | Good    | [Adam3.mp3](https://www.pametnaroda.cz/system/files/2023-02/Adam3.mp3)                                                                     |
-| witness_16_540-audio               | plukovník Josef Balejka           | Jak ho Poláci málem pověsili                                          | OK      | [540-audio.mp3](https://www.pametnaroda.cz/system/files/witness/16/540-audio.mp3)                                                          |
-| witness_44_87-audio                | kapitán Adolf Vodička             | Motivace k odchodu                                                    | OK      | [87-audio.mp3](https://www.pametnaroda.cz/system/files/witness/44/87-audio.mp3)                                                            |
-| witness_1719_14584-audio           | Staša Fleischmannová              | Fučík v ateliéru                                                      | Poor    | [14584-audio.mp3](https://www.pametnaroda.cz/system/files/witness/1719/14584-audio.mp3)                                                    |
-| witness_1719_14584-audio-leveled   | dtto                              | dtto                                                                  | OK      | louder by 30dB                                                                                                                             |
-| witness_1994_12938-audio           | Benjamin Abeles                   | U pozemního personálu v Royal Air Force                               | Poor    | [12938-audio.mp3](https://www.pametnaroda.cz/system/files/witness/1994/12938-audio.mp3)                                                    |
-| witness_1994_12938-audio-leveled   | dtto                              | dtto                                                                  | OK      | louder by 22db                                                                                                                             |
-| witness_2134_8442-audio.mp3        | František Adamec                  | Zastřelili faráře z Olomouce a tvrdili, že to bylo při útěku z vězení | Poor    | [witness_2134_8442-audio.mp3](https://www.pametnaroda.cz/system/files/witness/2134/8442-audio.mp3)                                         |
-| witness_2148_7922-audio            | Hilda Arnsteinová, roz. Sommerová | Život v Terezíně                                                      | Poor    | [7922-audio.mp3](https://www.pametnaroda.cz/system/files/witness/2148/7922-audio.mp3)                                                      |
-| witness_4364_12898-video           | Zdeněk Adamec                     | Protest proti maďarským událostem v roce 1956                         | OK      | [12898-video.mov](https://www.pametnaroda.cz/system/files/witness/4364/12898-video.mov)                                                    |
-| witness_by-date_2020-08_nejhor_... | Iva Bejčková                      | Kapající voda na samotce                                              | Good    | [link](https://www.pametnaroda.cz/system/files/witness/by-date/2020-08/nejhor%C5%A1%C3%AD%20byla%20kapaj%C3%ADc%C3%AD%20voda.mp3)          |
-| witness_by-date_2020-11_Kv_...     | Mgr. Květa Běhalová               | Výslech kvůli Černé knize vydané v roce 1968                          | Good    | [link](https://www.pametnaroda.cz/system/files/witness/by-date/2020-11/Kv%C5%AFli%20%C4%8Cern%C3%A9%20knize%20vysl%C3%BDch%C3%A1ni%20.mp3) |
+| File                               | Person                            | Event                                                                 | Quality        | Link                                                                                                                                       |
+|------------------------------------|-----------------------------------|-----------------------------------------------------------------------|----------------|--------------------------------------------------------------------------------------------------------------------------------------------|
+| 2022-10_Nesm%C4%9Bli...            | Zlata Bednářová                   | Nesměli bychom se vzít                                                | Poor           | [link](https://www.pametnaroda.cz/system/files/2022-10/Nesm%C4%9Bli%20bychom%20se%20vz%C3%ADt.mp3)                                         |
+| 2022-12_klip_0                     | RNDr., CSc. Adolf Absolon         | Nový domov v pohraničí                                                | Good           | [klip_0.mp3](https://www.pametnaroda.cz/system/files/2022-12/klip_0.mp3)                                                                   |
+| 2023-02_Adam3                      | Josef Adam                        | Sovětští vojáci se ve stodole prali o chleba                          | Good           | [Adam3.mp3](https://www.pametnaroda.cz/system/files/2023-02/Adam3.mp3)                                                                     |
+| witness_16_540-audio               | plukovník Josef Balejka           | Jak ho Poláci málem pověsili                                          | OK             | [540-audio.mp3](https://www.pametnaroda.cz/system/files/witness/16/540-audio.mp3)                                                          |
+| witness_44_87-audio                | kapitán Adolf Vodička             | Motivace k odchodu                                                    | OK             | [87-audio.mp3](https://www.pametnaroda.cz/system/files/witness/44/87-audio.mp3)                                                            |
+| witness_1719_14584-audio           | Staša Fleischmannová              | Fučík v ateliéru                                                      | Poor           | [14584-audio.mp3](https://www.pametnaroda.cz/system/files/witness/1719/14584-audio.mp3)                                                    |
+| witness_1719_14584-audio-leveled   | dtto                              | dtto                                                                  | OK             | louder by 30dB                                                                                                                             |
+| witness_1994_12938-audio           | Benjamin Abeles                   | U pozemního personálu v Royal Air Force                               | Poor           | [12938-audio.mp3](https://www.pametnaroda.cz/system/files/witness/1994/12938-audio.mp3)                                                    |
+| witness_1994_12938-audio-leveled   | dtto                              | dtto                                                                  | OK             | louder by 22db                                                                                                                             |
+| witness_2134_8442-audio.mp3        | František Adamec                  | Zastřelili faráře z Olomouce a tvrdili, že to bylo při útěku z vězení | Unintelligible | [witness_2134_8442-audio.mp3](https://www.pametnaroda.cz/system/files/witness/2134/8442-audio.mp3)                                         |
+| witness_2148_7922-audio            | Hilda Arnsteinová, roz. Sommerová | Život v Terezíně                                                      | Poor           | [7922-audio.mp3](https://www.pametnaroda.cz/system/files/witness/2148/7922-audio.mp3)                                                      |
+| witness_4364_12898-video           | Zdeněk Adamec                     | Protest proti maďarským událostem v roce 1956                         | OK             | [12898-video.mov](https://www.pametnaroda.cz/system/files/witness/4364/12898-video.mov)                                                    |
+| witness_by-date_2020-08_nejhor_... | Iva Bejčková                      | Kapající voda na samotce                                              | Good           | [link](https://www.pametnaroda.cz/system/files/witness/by-date/2020-08/nejhor%C5%A1%C3%AD%20byla%20kapaj%C3%ADc%C3%AD%20voda.mp3)          |
+| witness_by-date_2020-11_Kv_...     | Mgr. Květa Běhalová               | Výslech kvůli Černé knize vydané v roce 1968                          | Good           | [link](https://www.pametnaroda.cz/system/files/witness/by-date/2020-11/Kv%C5%AFli%20%C4%8Cern%C3%A9%20knize%20vysl%C3%BDch%C3%A1ni%20.mp3) |
 
 
 ## Asset Preprocessing
