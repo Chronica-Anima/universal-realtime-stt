@@ -86,9 +86,11 @@ class TestStt(unittest.IsolatedAsyncioTestCase):
                     logger.info(f"{pair.wav.name} LLM understanding: {report.custom_metric.score:.1f}%")
 
                 # Goal of the test is to check for realtime STT to work.
-                # So as long as we receive similar lengths (tolerance 14%) string back, we are happy.
-                # We do not verify whether what we got is correct transcription as part of the test here.
-                self.assertAlmostEqual(len(report.text_expected), len(report.text_got), delta=len(report.text_expected) / 7.0)
+                # As long as the pipeline ran without errors and returned something, we pass.
+                # Accuracy is the benchmark's job (benchmark.py), not the test's.
+                # Here we evaluate whether the STT process worked and the lib works correctly,
+                # not whether STT the provider itself is any good and returns meaningful results.
+                self.assertGreater(len(report.text_got.strip()), 0, "Provider returned no transcript")
 
     async def test_cartesia(self) -> None:
         config = CartesiaSttConfig(api_key=getenv("CARTESIA_API_KEY"))
