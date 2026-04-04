@@ -136,13 +136,17 @@ class GeminiLiveProvider:
         # Dict-form config is accepted by the SDK and avoids version-specific
         # type class imports (LiveConnectConfig field names shift across releases).
         #
-        # NOTE: speech_config.language_code is for TTS output synthesis only.
-        # Do NOT include it here — it is incompatible with response_modalities=["TEXT"]
-        # (no audio output) and causes WebSocket 1011 Internal Error at session setup.
-        # Input language is auto-detected from the audio by the model.
-        # IMPORTANT: gemini-3.1-flash-live-preview ONLY supports "AUDIO" response modality.
-        # "TEXT" causes WebSocket 1011 at connection time. We use input_audio_transcription
-        # to get text transcripts of the user's speech independently of the audio response.
+        # IMPORTANT: response_modalities MUST be ["AUDIO"] — not ["TEXT"].
+        # gemini-3.1-flash-live-preview is a native-audio model; it only supports
+        # AUDIO output. Setting ["TEXT"] causes WebSocket 1011 at connection time.
+        # We don't use the model's audio output — input_audio_transcription gives us
+        # a text sidecar of the user's speech independently of the audio response.
+        #
+        # Do NOT add speech_config.language_code here. That field selects the TTS
+        # output voice — it has nothing to do with STT input language detection.
+        # Input language is auto-detected from the audio; no per-session input
+        # language config exists in the Live API. Including speech_config with an
+        # unsupported combination of fields previously caused WebSocket 1011.
         live_config = {
             "response_modalities": ["AUDIO"],
             "system_instruction": self._cfg.system_instruction,
@@ -256,7 +260,18 @@ class GeminiLiveProvider:
 
         The model's generated text responses (model_turn) are intentionally
         ignored here; they are not used for transcription.
+
+        Gemini Live quirk — pending interim promotion
+        ----------------------------------------------
+        When audio_stream_end is sent, the server returns the final transcript
+        with finished=False and then immediately closes the connection (1000 OK).
+        It never sends finished=True for the last utterance before closing.
+        To handle this, we hold the most recent finished=False text in
+        _pending_interim. If the session closes normally without a finished=True
+        for that text, we promote it to is_final=True in the finally block so it
+        is not lost.
         """
+        _pending_interim: Optional[str] = None
         try:
             async for response in self._session.receive():
                 if self._closed.is_set():
@@ -272,14 +287,37 @@ class GeminiLiveProvider:
                     if text:
                         is_final = bool(t.finished)
                         logger.debug("[STT] GeminiLive: transcript (final=%s): %s", is_final, text[:60])
-                        await self._events_q.put(TranscriptEvent(text=text, is_final=is_final))
+                        if is_final:
+                            _pending_interim = None
+                            await self._events_q.put(TranscriptEvent(text=text, is_final=True))
+                        else:
+                            # Hold as pending — will be promoted if session closes without finished=True.
+                            _pending_interim = text
 
         except asyncio.CancelledError:
             raise
         except Exception as e:
-            logger.exception("[STT] GeminiLive: receiver crashed: %r", e)
-            if not self._error:
-                self._error = e
+            # Determine whether this is a normal/expected close:
+            #   _closed.is_set()        — we initiated close via end_audio() / __aexit__
+            #   status_code == 1000     — server sent a normal WebSocket close frame;
+            #                            the SDK converts ConnectionClosedOK →
+            #                            APIError(1000) before we see it.  This can
+            #                            arrive during the drain sleep in end_audio(),
+            #                            before _closed is set, so we must also
+            #                            check the code explicitly.
+            is_normal_close = self._closed.is_set() or getattr(e, "status_code", None) == 1000
+            if is_normal_close:
+                logger.debug("[STT] GeminiLive: recv loop ended after close: %s", e)
+            else:
+                logger.exception("[STT] GeminiLive: receiver crashed: %r", e)
+                if not self._error:
+                    self._error = e
         finally:
+            # Promote any pending interim to final before signalling end.
+            # This handles Gemini's pattern of closing (1000 OK) without sending
+            # finished=True for the last utterance.
+            if _pending_interim and not self._error:
+                logger.debug("[STT] GeminiLive: promoting pending interim to final: %s", _pending_interim[:60])
+                await self._events_q.put(TranscriptEvent(text=_pending_interim, is_final=True))
             self._closed.set()
             await self._events_q.put(None)
