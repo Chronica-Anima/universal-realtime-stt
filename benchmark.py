@@ -52,6 +52,7 @@ from helpers.transcribe import transcribe_and_diff
 from lib.stt_provider_cartesia import CartesiaInkProvider, CartesiaSttConfig
 from lib.stt_provider_deepgram import DeepgramRealtimeProvider, DeepgramSttConfig
 from lib.stt_provider_elevenlabs import ElevenLabsRealtimeProvider, ElevenLabsSttConfig
+from lib.stt_provider_gemini_live import GeminiLiveProvider, GeminiLiveSttConfig
 from lib.stt_provider_google import GoogleRealtimeProvider, GoogleSttConfig
 from lib.stt_provider_speechmatics import SpeechmaticsRealtimeProvider, SpeechmaticsSttConfig
 from lib.utils import setup_logging
@@ -119,6 +120,12 @@ def build_provider_specs() -> list[ProviderSpec]:
         specs.append(ProviderSpec("Speechmatics", SpeechmaticsRealtimeProvider, SpeechmaticsSttConfig(api_key=key)))
     else:
         logger.warning("SPEECHMATICS_API_KEY not set — skipping Speechmatics.")
+
+    key = getenv("GEMINI_API_KEY")
+    if key:
+        specs.append(ProviderSpec("GeminiLive", GeminiLiveProvider, GeminiLiveSttConfig(api_key=key)))
+    else:
+        logger.warning("GEMINI_API_KEY not set — skipping Gemini Live.")
 
     return specs
 

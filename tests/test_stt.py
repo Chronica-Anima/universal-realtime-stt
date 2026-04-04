@@ -29,6 +29,7 @@ from helpers.transcribe import transcribe_and_diff
 from lib.stt_provider_cartesia import CartesiaInkProvider, CartesiaSttConfig
 from lib.stt_provider_deepgram import DeepgramRealtimeProvider, DeepgramSttConfig
 from lib.stt_provider_elevenlabs import ElevenLabsRealtimeProvider, ElevenLabsSttConfig
+from lib.stt_provider_gemini_live import GeminiLiveProvider, GeminiLiveSttConfig
 from lib.stt_provider_google import GoogleRealtimeProvider, GoogleSttConfig
 from lib.stt_provider_speechmatics import SpeechmaticsRealtimeProvider, SpeechmaticsSttConfig
 from lib.utils import setup_logging
@@ -110,6 +111,18 @@ class TestStt(unittest.IsolatedAsyncioTestCase):
     async def test_speechmatics(self) -> None:
         config = SpeechmaticsSttConfig(api_key=getenv("SPEECHMATICS_API_KEY"))
         await self._runner(SpeechmaticsRealtimeProvider, config)
+
+    async def test_gemini_live(self) -> None:
+        """Gemini Live API real-time STT.
+
+        Requires GEMINI_API_KEY in .env and google-genai installed.
+        Model: gemini-3.1-flash-live-preview (preview — may not be stable).
+        """
+        api_key = getenv("GEMINI_API_KEY")
+        if not api_key:
+            self.fail("GEMINI_API_KEY not set — add it to .env to run this test")
+        config = GeminiLiveSttConfig(api_key=api_key)
+        await self._runner(GeminiLiveProvider, config)
 
     async def test_speechmatics_semantics(self) -> None:
         """Speechmatics end-to-end with LLM semantic understanding metric.

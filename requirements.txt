@@ -6,8 +6,8 @@ diff-match-patch>=20241021
 # Just for unit tests
 # pytest
 
-# Just for running the LLM benchmark
-# google-genai>=1.64.0
+# Gemini Live provider + optional LLM benchmark metric
+google-genai>=1.64.0
 
 # Providers
 #
