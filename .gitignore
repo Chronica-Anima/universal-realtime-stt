@@ -2,9 +2,6 @@
 .env*
 stt-test-*.json
 
-# asset - only for testing, do not include in repo
-assets/*
-
 # temp
 tmp/
 
