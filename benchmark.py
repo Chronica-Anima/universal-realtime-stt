@@ -35,7 +35,10 @@ Usage
 from __future__ import annotations
 
 import asyncio
+import signal
 import sys
+import tempfile
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from logging import getLogger, INFO
@@ -65,6 +68,12 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 # Result container
 # ---------------------------------------------------------------------------
+
+MAX_RETRIES = 3
+RETRY_DELAY_S = 30.0
+PER_FILE_TIMEOUT_S = 600  # 10 minutes — generous for real-time streaming
+CONSECUTIVE_FAILURE_LIMIT = 5  # stop provider after this many failures in a row
+
 
 @dataclass(frozen=True)
 class BenchmarkResult:
@@ -134,41 +143,109 @@ def build_provider_specs() -> list[ProviderSpec]:
 # Per-provider runner (processes all files sequentially)
 # ---------------------------------------------------------------------------
 
-async def run_provider(spec: ProviderSpec, pairs: list[AssetPair], ts: str, custom_metric_fn=None) -> list[BenchmarkResult]:
-    """Run one provider against all asset files. Returns one result per file."""
-    results: list[BenchmarkResult] = []
+async def run_provider(
+    spec: ProviderSpec,
+    pairs: list[AssetPair],
+    ts: str,
+    results_acc: list[BenchmarkResult],
+    results_lock: asyncio.Lock,
+    custom_metric_fn=None,
+) -> list[BenchmarkResult]:
+    """Run one provider against all asset files. Returns one result per file.
 
-    for pair in pairs:
-        logger.info("[%s] Processing %s ...", spec.name, pair.wav.name)
+    Results are also appended to `results_acc` (under lock) for incremental TSV writes.
+    """
+    results: list[BenchmarkResult] = []
+    total = len(pairs)
+    consecutive_failures = 0
+
+    for idx, pair in enumerate(pairs, 1):
+        # Circuit breaker: stop after too many consecutive failures
+        if consecutive_failures >= CONSECUTIVE_FAILURE_LIMIT:
+            msg = f"Stopped after {CONSECUTIVE_FAILURE_LIMIT} consecutive failures"
+            logger.error("[%s] %s — %s", spec.name, pair.wav.name, msg)
+            result = BenchmarkResult(spec.name, pair.wav.name, None, None, msg)
+            results.append(result)
+            async with results_lock:
+                results_acc.append(result)
+            continue
+
+        logger.info("[%s] (%d/%d) Processing %s ...", spec.name, idx, total, pair.wav.name)
+        t0 = time.monotonic()
         report_path = OUT_PATH / f"{ts}_{spec.name}_{pair.wav.stem}.diff.html"
-        try:
-            provider = spec.cls(spec.config)
-            report = await transcribe_and_diff(
-                provider,
-                pair.wav,
-                pair.txt,
-                report_path,
-                chunk_ms=CHUNK_MS,
-                sample_rate=AUDIO_SAMPLE_RATE,
-                realtime_factor=TEST_REALTIME_FACTOR,
-                silence_s=FINAL_SILENCE_S,
-                custom_metric_fn=custom_metric_fn,
-            )
-            logger.info("[%s] %s — WER: %.1f%%, CER: %.1f%%", spec.name, pair.wav.name, report.word_error_rate, report.character_error_rate)
-            results.append(BenchmarkResult(spec.name, pair.wav.name, report, report_path, None))
-        except Exception as exc:
-            logger.error("[%s] %s — FAILED: %s", spec.name, pair.wav.name, exc)
-            results.append(BenchmarkResult(spec.name, pair.wav.name, None, None, str(exc)))
+
+        result = await _run_single_file(spec, pair, report_path, custom_metric_fn)
+
+        elapsed = time.monotonic() - t0
+        if result.report:
+            consecutive_failures = 0
+            logger.info("[%s] (%d/%d) %s — WER: %.1f%%, CER: %.1f%% (%.1fs)",
+                        spec.name, idx, total, pair.wav.name,
+                        result.report.word_error_rate, result.report.character_error_rate, elapsed)
+        else:
+            consecutive_failures += 1
+            logger.error("[%s] (%d/%d) %s — FAILED (attempt exhausted, %.1fs): %s",
+                         spec.name, idx, total, pair.wav.name, elapsed, result.error)
+
+        results.append(result)
+        async with results_lock:
+            results_acc.append(result)
 
     return results
+
+
+async def _run_single_file(
+    spec: ProviderSpec,
+    pair: AssetPair,
+    report_path: Path,
+    custom_metric_fn,
+) -> BenchmarkResult:
+    """Attempt to transcribe a single file with retry and timeout."""
+    last_error: str = ""
+
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            provider = spec.cls(spec.config)
+            report = await asyncio.wait_for(
+                transcribe_and_diff(
+                    provider,
+                    pair.wav,
+                    pair.txt,
+                    report_path,
+                    chunk_ms=CHUNK_MS,
+                    sample_rate=AUDIO_SAMPLE_RATE,
+                    realtime_factor=TEST_REALTIME_FACTOR,
+                    silence_s=FINAL_SILENCE_S,
+                    custom_metric_fn=custom_metric_fn,
+                ),
+                timeout=PER_FILE_TIMEOUT_S,
+            )
+            return BenchmarkResult(spec.name, pair.wav.name, report, report_path, None)
+
+        except asyncio.CancelledError:
+            raise  # propagate cancellation, don't retry
+
+        except asyncio.TimeoutError:
+            last_error = f"Timed out after {PER_FILE_TIMEOUT_S}s (attempt {attempt}/{MAX_RETRIES})"
+            logger.warning("[%s] %s — %s", spec.name, pair.wav.name, last_error)
+
+        except Exception as exc:
+            last_error = f"{exc} (attempt {attempt}/{MAX_RETRIES})"
+            logger.warning("[%s] %s — %s", spec.name, pair.wav.name, last_error)
+
+        # Delay before retry (but not after the last attempt)
+        if attempt < MAX_RETRIES:
+            await asyncio.sleep(RETRY_DELAY_S)
+
+    return BenchmarkResult(spec.name, pair.wav.name, None, None, last_error)
 
 
 # ---------------------------------------------------------------------------
 # TSV report writer
 # ---------------------------------------------------------------------------
 
-def write_tsv(results: list[BenchmarkResult], ts: str) -> Path:
-    """Write benchmark results to TSV. Columns are derived from DiffReport.to_metrics_dict()."""
+def write_tsv(results: list[BenchmarkResult], ts: str) -> Path | None:
+    """Write benchmark results to TSV atomically. Columns are derived from DiffReport.to_metrics_dict()."""
     results_sorted = sorted(results, key=lambda r: (r.provider_name, r.file_name))
 
     # Discover metric columns from the first successful report
@@ -185,14 +262,27 @@ def write_tsv(results: list[BenchmarkResult], ts: str) -> Path:
             row = [r.provider_name, r.file_name] + [""] * len(metric_cols) + ["", r.error or "unknown error"]
         rows.append("\t".join(row))
 
-    tsv_path = OUT_PATH / f"{ts}_benchmark.tsv"
-    tsv_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    try:
+        tsv_path = OUT_PATH / f"{ts}_benchmark.tsv"
+        tsv_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    except BaseException as exc:
+        logger.exception("Could not write file: %r", exc, exc_info=True)
+        print(rows)
+        return None
+
     return tsv_path
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+
+async def _flush_tsv(results: list[BenchmarkResult], ts: str, lock: asyncio.Lock) -> None:
+    """Write incremental TSV snapshot (called periodically and on shutdown)."""
+    async with lock:
+        if results:
+            write_tsv(list(results), ts)
+
 
 async def main() -> None:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -226,12 +316,45 @@ async def main() -> None:
 
     logger.info("Benchmark starting: %d provider(s), %d file(s).", len(specs), len(pairs))
 
-    # Run all providers in parallel
-    nested: list[list[BenchmarkResult]] = await asyncio.gather( *(run_provider(spec, pairs, ts, custom_metric_fn=semantic_understanding_fn) for spec in specs),)  # type: ignore[assignment] — asyncio.gather returns tuple, but runtime values match
-    all_results: List[BenchmarkResult] = [r for provider_results in nested for r in provider_results]
+    # Shared accumulator for incremental TSV writes
+    all_results: List[BenchmarkResult] = []
+    results_lock = asyncio.Lock()
 
-    # Write TSV
-    tsv_path = write_tsv(all_results, ts)
+    # Periodic TSV flush task
+    flush_interval_s = 60
+
+    async def periodic_flush():
+        while True:
+            await asyncio.sleep(flush_interval_s)
+            await _flush_tsv(all_results, ts, results_lock)
+
+    flush_task = asyncio.create_task(periodic_flush())
+
+    # Run all providers in parallel with return_exceptions=True
+    try:
+        nested = await asyncio.gather(
+            *(run_provider(spec, pairs, ts, all_results, results_lock,
+                           custom_metric_fn=semantic_understanding_fn)
+              for spec in specs),
+            return_exceptions=True,
+        )
+        # Handle any provider-level exceptions
+        for spec, result in zip(specs, nested):
+            if isinstance(result, BaseException):
+                logger.error("[%s] Provider task crashed: %s", spec.name, result)
+
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        logger.warning("Benchmark interrupted — saving partial results.")
+
+    finally:
+        flush_task.cancel()
+        # Always write final TSV with whatever we have
+        tsv_path = write_tsv(list(all_results), ts) if all_results else None
+
+    if not all_results:
+        logger.error("No results collected.")
+        sys.exit(1)
+
     logger.info("Benchmark complete. TSV report: %s", tsv_path)
 
     # Print summary to stdout
@@ -254,4 +377,10 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Handle SIGTERM gracefully (same as KeyboardInterrupt)
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Interrupted by user.")
+        sys.exit(130)
