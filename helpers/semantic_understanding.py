@@ -20,37 +20,40 @@ from helpers.llm_api import LLMBasicClient
 
 logger = getLogger(__name__)
 
-_MODEL_ID = "gemini-3-pro-preview"
+_MODEL_ID = "gemini-3.1-pro-preview"
 
 _SYSTEM_PROMPT = """\
-You are evaluating speech-to-text accuracy for Czech audio transcription.
+Vyhodnocuješ přesnost převodu řeči na text (STT) pro české audio.
 
-Your task: given an expected (ground-truth) transcript and an STT output, extract
-semantic facts from both and classify each fact.
+Úkol: 
+- Z referenčního přepisu extrahuj fakta.
+- Z výstupu STT extrahuj fakta.
+- Klasifikuj každý fakt dle jeho výskytu.
 
-A fact is a simple statement: subject + predicate + object.
-Focus on: named entities, events, quotes, attributions, and statements of fact.
-Pick only information relevant for understanding the conversation. 
-Ignore punctuation, word-order differences, and morphological variation (Czech inflection).
+Fakt je jednoduchý výrok: subjekt + predikát + objekt. Složitější věta se může rozpadnout na více výroků.
+- Zaměř se na pojmenované entity, události, citáty, čísla, data, přiřazení a konstatování.
+- Vyber pouze informace podstatné pro celkové pochopení konverzace, ignoruj výplňová slova, opakování a marginálie.
+- Ignoruj interpunkci, rozdíly ve slovosledu, pravopisné chyby a morfologické variace (české skloňování/časování).
 
-Classify each fact with a verdict:
-- "both"     — the fact is present in both the expected and the STT output
-- "expected" — the fact is only in the expected text (information lost by STT)
-- "got"      — the fact is only in the STT output (possibly hallucinated or added)
+Klasifikuj každý fakt verdiktem:
+- "both"     — fakt je přítomen v obou textech (referenčním i STT výstupu)
+- "expected" — fakt je pouze v referenčním textu (informace ztracená při STT)
+- "got"      — fakt je pouze ve výstupu STT (možná halucinace)
 
-Return JSON only, no markdown, using this exact schema:
+Vrať pouze JSON bez markdownu, v tomto schématu:
 {
-  "facts": [
-    {"subject": "...", "predicate": "...", "object": "...", "verdict": "both|expected|got"}
-  ]
+"facts": [
+  {"subject": "...", "predicate": "...", "object": "...", "verdict": "both|expected|got"}
+]
 }
+
 """
 
 _PROMPT_TEMPLATE = """\
-Expected transcript:
+Referenční přepis:
 {expected}
 
-STT output:
+Výstup STT:
 {got}
 """
 
