@@ -1,4 +1,7 @@
-# Realtime Speech-to-Text for Czech: A Benchmark of Major Providers on Elderly Speech
+# Realtime Speech-to-Text for Czech: Benchmark of Major Providers
+
+Authors: Tomáš Kubeš, Iveta Zimmerová, Ondřej Ulrich — Chronic Anima:
+www.chronicaanima.com, tomas.kubes@chronicaanima.com
 
 ## Abstract
 
@@ -26,7 +29,18 @@ Audio format: 16 kHz, mono, 16-bit PCM. Ground-truth transcripts verified by a h
 
 All providers receive identical input: audio streamed in 200 ms chunks at 1x realtime speed via WebSocket (or provider SDK where WebSocket is unavailable). A 2-second silence padding ensures final-utterance VAD commit. No provider-specific tuning beyond selecting the best available realtime model and Czech language setting.
 
-Providers tested: Speechmatics, Google Cloud STT, Cartesia, ElevenLabs, Deepgram, Gemini Flash Live.
+Providers and models tested:
+
+| Provider | Model |
+|----------|-------|
+| Speechmatics | Enhanced (operating point) |
+| Google Cloud STT | v1 API, default model |
+| Cartesia | ink-whisper |
+| ElevenLabs | scribe_v2_realtime |
+| Deepgram | nova-3 |
+| Gemini Flash Live | gemini-3.1-flash-live-preview |
+
+All models represent the best available realtime offering from each provider as of May 2026, with one exception: Google Cloud STT uses the v1 streaming API with its default model. Google's newer Chirp 3 model (v2 API) was not tested due to an incompatible API migration; Google's results may therefore understate their current best capability.
 
 ### Text Normalization
 
@@ -106,6 +120,8 @@ Our results show that while WER is 45% on average (nearly every second word wron
 ## Discussion
 
 This benchmark represents a snapshot of provider capabilities as of [DATE]. Provider models improve continuously; results may shift with future updates.
+
+The authors have received no incentives or benefits from any of the tested providers. All accounts except ElevenLabs used standard free trial credits available at sign-up.
 
 We release the complete evaluation toolkit as open source: audio streaming library, normalization pipeline, WER/CER/SER computation, and HTML diff reports. Adding a new provider requires implementing a single async protocol class (~100 lines). We invite the community to:
 
