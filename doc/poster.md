@@ -5,7 +5,7 @@ www.chronicaanima.com, tomas.kubes@chronicaanima.com
 
 ## Abstract
 
-We evaluate six commercial realtime STT providers on 91 recordings (~2 hours) of elderly Czech speakers from the Pamet Naroda oral history archive. Average Word Error Rate across providers is 45%, with the best provider achieving 28%. We propose Semantic Error Rate (SER), an LLM-based metric that measures information preservation rather than surface accuracy, and show that it better reflects transcript usability for morphologically rich languages. All code and data are released as an open-source toolkit.
+We evaluate six commercial realtime STT providers on 91 recordings (~2 hours) of elderly Czech speakers from the Pamet Naroda oral history archive. Average Word Error Rate across providers is XX%, with the best provider achieving XX%. We propose Semantic Error Rate (SER), an LLM-based metric that measures information preservation rather than surface accuracy, and show that it better reflects transcript usability for morphologically rich languages. All code and data are released as an open-source toolkit.
 
 ## Introduction
 
@@ -21,13 +21,15 @@ We built a comprehensive benchmark to quantify this gap for our own product need
 
 ### Dataset
 
-91 audio recordings (~2 hours total) sourced from Pamet Naroda, a Czech oral history project. Recordings feature elderly speakers in home interview settings — natural conversational speech with background noise, cross-talk, and varied recording quality. Files were randomly selected from the archive; recordings in other languages or deemed unintelligible by human listeners were excluded.
+91 audio recordings (~2 hours total) sourced from Pamet Naroda, a Czech oral history project. Recordings feature elderly speakers in home interview settings — natural conversational speech with background noise, and varied recording quality. Files were randomly selected from the archive; recordings in other languages or deemed unintelligible by human listeners were excluded.
 
-Audio format: 16 kHz, mono, 16-bit PCM. Ground-truth transcripts verified by a human annotator.
+Audio format: 16 kHz, mono, 16-bit PCM. Ground-truth transcripts verified by a human annotator (this resulted in significant alteration compared to published transcripts which are stylistically cleaned up).
 
 ### Evaluation Protocol
 
 All providers receive identical input: audio streamed in 200 ms chunks at 1x realtime speed via WebSocket (or provider SDK where WebSocket is unavailable). A 2-second silence padding ensures final-utterance VAD commit. No provider-specific tuning beyond selecting the best available realtime model and Czech language setting.
+
+8 recordings with low original volume were tested both in original form and after sound leveling, to assess provider robustness to quiet input. Both variants are included in the results and clearly marked in the dataset.
 
 Providers and models tested:
 
@@ -89,7 +91,7 @@ The LLM is instructed (in Czech) to:
 
 ### Why SER Matters
 
-Our results show that while WER is 45% on average (nearly every second word wrong), SER is 33% — meaning roughly two-thirds of semantic information survives. For downstream tasks, especially our conversational agent, SER better predicts actual transcript utility.
+Our results show that while WER is XX% on average (nearly every second word wrong), SER is XX% — meaning roughly two-thirds of semantic information survives. For downstream tasks, especially our conversational agent, SER better predicts actual transcript utility.
 
 ## Results
 
@@ -109,13 +111,30 @@ Our results show that while WER is 45% on average (nearly every second word wron
 
 1. **Speechmatics is the clear leader**, outperforming all others on every metric by a wide margin.
 
-2. **Average WER of 45%** means nearly every second word is incorrect — far from marketed accuracy claims.
+2. **Average WER of XX%** means nearly every second word is incorrect — far from marketed accuracy claims.
 
 3. **SER is consistently lower than WER** across all providers, confirming that semantic information is more robust than surface-level word accuracy suggests for Czech language.
 
-4. **WER and SER rankings diverge.** Google ranks 2nd on WER (41.5%) but 5th on SER (36.1%), while ElevenLabs ranks 4th on WER (47.8%) but 1st-equal on SER (28.2%). This demonstrates that word accuracy and information preservation are distinct qualities — and that SER captures a dimension WER misses.
+4. **WER and SER rankings diverge.** Google ranks 2nd on WER (XX%) but 5th on SER (XX%), while ElevenLabs ranks 4th on WER (XX%) but 1st-equal on SER (XX%). This demonstrates that word accuracy and information preservation are distinct qualities — and that SER captures a dimension WER misses.
 
 5. **Gemini Flash Live** performs worst across all metrics. As a multimodal model where STT is one capability among many, this is not unexpected, but it quantifies the gap versus dedicated STT systems.
+
+### Qualitative Example
+
+File: jandasek-miroslav-1923.wav (125 words, speaker born 1923). The recording discusses how Sokol gymnastics members self-funded their halls without state subsidies, and how 80% of the population participated, with children training twice a week.
+
+**Ground truth (excerpt):**
+> „...když jim řekli, že ne, nikdo, že tam chodí sami, ale že si ze svých prostředků postavili sokolovnu, jo, aniž by dostali korunu dotací od státu nebo města."
+
+**Speechmatics** (WER 20.8%) — preserves meaning, minor morphological slips:
+> „...když jim řekli že ne nikdo že tam chodí sami ale že si ze svých prostředků postavili sokolovnu jo aniž by dostali korunu dotací od státu města"
+
+**Google** (WER 36.8%) — meaning partly preserved, some words garbled:
+> „...když jí řekne vyženeме nikdo že tam chodí sami ale že si ze svých prostředků postavili sokolovnou jo aniž by dostali dotaci od státu města"
+
+**ElevenLabs** (WER 81.6%) — heavy distortion, yet key facts (Sokol, self-funded, no state support) remain partially recognizable.
+
+[NOTE: Exact transcripts to be replaced with v2 results]
 
 ## Discussion
 
@@ -123,7 +142,7 @@ This benchmark represents a snapshot of provider capabilities as of [DATE]. Prov
 
 The authors have received no incentives or benefits from any of the tested providers. All accounts except ElevenLabs used standard free trial credits available at sign-up.
 
-We release the complete evaluation toolkit as open source: audio streaming library, normalization pipeline, WER/CER/SER computation, and HTML diff reports. Adding a new provider requires implementing a single async protocol class (~100 lines). We invite the community to:
+We release the complete evaluation toolkit as open source: audio streaming library, normalization pipeline, WER/CER/SER computation, and HTML diff report generator. Adding a new provider requires implementing a single async protocol class (~100 lines). We invite the community to:
 
 - Test additional providers or models we did not cover
 - Apply the toolkit to other languages and speaker demographics
