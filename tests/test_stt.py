@@ -26,15 +26,16 @@ from dotenv import load_dotenv
 from config import AUDIO_SAMPLE_RATE, CHUNK_MS, TEST_REALTIME_FACTOR, FINAL_SILENCE_S, OUT_PATH, ASSETS_DIR
 from helpers.load_assets import get_test_files
 from helpers.transcribe import transcribe_and_diff
-from lib.stt_provider_cartesia import CartesiaInkProvider, CartesiaSttConfig
-from lib.stt_provider_deepgram import DeepgramRealtimeProvider, DeepgramSttConfig
-from lib.stt_provider_elevenlabs import ElevenLabsRealtimeProvider, ElevenLabsSttConfig
-from lib.stt_provider_gemini_live import GeminiLiveProvider, GeminiLiveSttConfig
-from lib.stt_provider_google import GoogleRealtimeProvider, GoogleSttConfig
-from lib.stt_provider_speechmatics import SpeechmaticsRealtimeProvider, SpeechmaticsSttConfig
-from lib.utils import setup_logging
+from universal_realtime_audio.stt_provider_cartesia import CartesiaInkProvider, CartesiaSttConfig
+from universal_realtime_audio.stt_provider_deepgram import DeepgramRealtimeProvider, DeepgramSttConfig
+from universal_realtime_audio.stt_provider_elevenlabs import ElevenLabsSttProvider, ElevenLabsSttConfig
+from universal_realtime_audio.stt_provider_gemini_live import GeminiLiveProvider, GeminiLiveSttConfig
+from universal_realtime_audio.stt_provider_google import GoogleRealtimeProvider, GoogleSttConfig
+from universal_realtime_audio.stt_provider_speechmatics import SpeechmaticsSttProvider, SpeechmaticsSttConfig
+from universal_realtime_audio.utils import setup_logging
 
-setup_logging()
+from config import LOG_PATH as _LOG_PATH
+setup_logging(log_dir=_LOG_PATH)
 logger = getLogger(__name__)
 load_dotenv()
 
@@ -102,7 +103,7 @@ class TestStt(unittest.IsolatedAsyncioTestCase):
 
     async def test_eleven_labs(self) -> None:
         config = ElevenLabsSttConfig(api_key=getenv("ELEVENLABS_API_KEY"))
-        await self._runner(ElevenLabsRealtimeProvider, config)
+        await self._runner(ElevenLabsSttProvider, config)
 
     async def test_google(self) -> None:
         # Google uses Application Default Credentials (ADC), not an API key.
@@ -112,7 +113,7 @@ class TestStt(unittest.IsolatedAsyncioTestCase):
 
     async def test_speechmatics(self) -> None:
         config = SpeechmaticsSttConfig(api_key=getenv("SPEECHMATICS_API_KEY"))
-        await self._runner(SpeechmaticsRealtimeProvider, config)
+        await self._runner(SpeechmaticsSttProvider, config)
 
     async def test_gemini_live(self) -> None:
         """Gemini Live API real-time STT.
@@ -143,4 +144,4 @@ class TestStt(unittest.IsolatedAsyncioTestCase):
             else:
                 analyzer = SemanticUnderstandingAnalyzer(api_key)
                 config = SpeechmaticsSttConfig(api_key=getenv("SPEECHMATICS_API_KEY"))
-                await self._runner(SpeechmaticsRealtimeProvider, config, custom_metric_fn=analyzer.compare)
+                await self._runner(SpeechmaticsSttProvider, config, custom_metric_fn=analyzer.compare)

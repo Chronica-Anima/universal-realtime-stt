@@ -11,15 +11,13 @@ google-genai>=1.64.0
 
 # Providers
 #
-# Cartesia
-# We do not use their library, we directly stream to webscokcet.
+# Cartesia — direct WebSocket, no SDK needed
 #
-# Eleven Labs
-# We do not use their library, we directly stream to webscokcet.
-# elevenlabs>=2.31.0
+# ElevenLabs
+elevenlabs>=2.0.0
 #
 # Google
 google-cloud-speech>=2.36.0
 #
 # Speechmatics
-# We do not use their library, we directly stream to webscokcet.
+speechmatics-rt>=1.0.0
