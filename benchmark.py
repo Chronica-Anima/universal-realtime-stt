@@ -49,15 +49,16 @@ from config import AUDIO_SAMPLE_RATE, CHUNK_MS, TEST_REALTIME_FACTOR, FINAL_SILE
 from helpers.diff_report import DiffReport
 from helpers.load_assets import get_test_files, AssetPair
 from helpers.transcribe import transcribe_and_diff
-from lib.stt_provider_cartesia import CartesiaInkProvider, CartesiaSttConfig
-from lib.stt_provider_deepgram import DeepgramRealtimeProvider, DeepgramSttConfig
-from lib.stt_provider_elevenlabs import ElevenLabsRealtimeProvider, ElevenLabsSttConfig
-from lib.stt_provider_gemini_live import GeminiLiveProvider, GeminiLiveSttConfig
-from lib.stt_provider_google import GoogleRealtimeProvider, GoogleSttConfig
-from lib.stt_provider_speechmatics import SpeechmaticsRealtimeProvider, SpeechmaticsSttConfig
-from lib.utils import setup_logging
+from universal_realtime_audio.stt_provider_cartesia import CartesiaInkProvider, CartesiaSttConfig
+from universal_realtime_audio.stt_provider_deepgram import DeepgramRealtimeProvider, DeepgramSttConfig
+from universal_realtime_audio.stt_provider_elevenlabs import ElevenLabsSttProvider, ElevenLabsSttConfig
+from universal_realtime_audio.stt_provider_gemini_live import GeminiLiveProvider, GeminiLiveSttConfig
+from universal_realtime_audio.stt_provider_google import GoogleRealtimeProvider, GoogleSttConfig
+from universal_realtime_audio.stt_provider_speechmatics import SpeechmaticsSttProvider, SpeechmaticsSttConfig
+from universal_realtime_audio.utils import setup_logging
 
-setup_logging(INFO)
+from config import LOG_PATH as _LOG_PATH
+setup_logging(INFO, log_dir=_LOG_PATH)
 logger = getLogger(__name__)
 load_dotenv()
 
@@ -105,7 +106,7 @@ def build_provider_specs() -> list[ProviderSpec]:
 
     key = getenv("ELEVENLABS_API_KEY")
     if key:
-        specs.append(ProviderSpec("ElevenLabs", ElevenLabsRealtimeProvider, ElevenLabsSttConfig(api_key=key)))
+        specs.append(ProviderSpec("ElevenLabs", ElevenLabsSttProvider, ElevenLabsSttConfig(api_key=key)))
     else:
         logger.warning("ELEVENLABS_API_KEY not set — skipping ElevenLabs.")
 
@@ -117,7 +118,7 @@ def build_provider_specs() -> list[ProviderSpec]:
 
     key = getenv("SPEECHMATICS_API_KEY")
     if key:
-        specs.append(ProviderSpec("Speechmatics", SpeechmaticsRealtimeProvider, SpeechmaticsSttConfig(api_key=key)))
+        specs.append(ProviderSpec("Speechmatics", SpeechmaticsSttProvider, SpeechmaticsSttConfig(api_key=key)))
     else:
         logger.warning("SPEECHMATICS_API_KEY not set — skipping Speechmatics.")
 
