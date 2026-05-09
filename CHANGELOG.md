@@ -17,8 +17,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
-- **Package rename**: `lib/` -> `universal_realtime_audio/`
-- **Project rename**: `universal-realtime-stt` -> `universal-realtime-audio`
+- **Package rename**: `lib/` -> `universal_realtime_stt_tts/`
+- **Project rename**: `universal-realtime-stt` -> `universal-realtime-stt-tts`
 - **ElevenLabs STT**: rewritten from raw WebSocket to official `elevenlabs` SDK with callback-based events
 - **Speechmatics STT**: rewritten from raw WebSocket to official `speechmatics-rt` SDK with decorator-based events
 - **Class renames**: `ElevenLabsRealtimeProvider` -> `ElevenLabsSttProvider`, `SpeechmaticsRealtimeProvider` -> `SpeechmaticsSttProvider`

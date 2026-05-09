@@ -8,7 +8,7 @@ from typing import AsyncIterator
 
 from websockets import ConnectionClosed, ConnectionClosedOK
 
-from universal_realtime_audio.stt_provider import TranscriptEvent
+from universal_realtime_stt_tts.stt_provider import TranscriptEvent
 
 
 class SttEventQueue:

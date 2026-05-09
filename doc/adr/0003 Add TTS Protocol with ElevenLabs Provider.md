@@ -26,6 +26,6 @@ Speechmatics TTS was considered but is English-only — not implemented until Cz
 
 ## Consequences
 
-- Library becomes `universal-realtime-audio` (renamed from `universal-realtime-stt`)
+- Library becomes `universal-realtime-stt-tts` (renamed from `universal-realtime-stt`)
 - TTS providers follow the same pattern as STT: frozen config dataclass + protocol implementation
 - `elevenlabs` SDK serves both STT and TTS

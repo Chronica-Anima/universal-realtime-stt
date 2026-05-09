@@ -51,7 +51,7 @@ Provider API keys in `.env`:
 
 The system uses async/await throughout with queue-based communication between components.
 
-### `universal_realtime_audio/` — Core library
+### `universal_realtime_stt_tts/` — Core library
 
 **STT provider protocol** (`stt_provider.py`): Defines `RealtimeSttProvider` protocol and `TranscriptEvent` dataclass (with `text`, `is_final`, and optional `speaker` field for diarization). New providers implement this protocol via structural typing (no inheritance needed).
 
@@ -87,7 +87,7 @@ ffmpeg -i input.mp3 -ac 1 -ar 16000 -c:a pcm_s16le output.wav
 ## Test Output
 
 - **HTML diffs** in `out/` — visual comparison of expected vs actual transcripts
-- **Logs** in `log/` — DEBUG for project code (`universal_realtime_audio.*`), INFO for third-party libraries
+- **Logs** in `log/` — DEBUG for project code (`universal_realtime_stt_tts.*`), INFO for third-party libraries
 - **TSV reports** in `out/` — benchmark results with per-provider, per-file CER/WER metrics
 
 ## Configuration
@@ -107,9 +107,9 @@ ffmpeg -i input.mp3 -ac 1 -ar 16000 -c:a pcm_s16le output.wav
 
 ## Adding a New STT Provider
 
-1. Create `universal_realtime_audio/stt_provider_<name>.py` with:
+1. Create `universal_realtime_stt_tts/stt_provider_<name>.py` with:
    - A frozen `@dataclass` config class (API key + provider-specific settings with literal defaults)
-   - A class implementing the `RealtimeSttProvider` protocol from `universal_realtime_audio/stt_provider.py`
+   - A class implementing the `RealtimeSttProvider` protocol from `universal_realtime_stt_tts/stt_provider.py`
    - The protocol requires: `async __aenter__`/`__aexit__`, `send_audio(bytes)`, `end_audio()`, `events() -> AsyncIterator[TranscriptEvent]`
 2. Most providers use an internal `asyncio.Queue[TranscriptEvent | None]` fed by a background listener, with `events()` draining it
 3. Add a test method in `tests/test_stt.py` following the pattern of existing tests
@@ -118,9 +118,9 @@ ffmpeg -i input.mp3 -ac 1 -ar 16000 -c:a pcm_s16le output.wav
 
 ## Adding a New TTS Provider
 
-1. Create `universal_realtime_audio/tts_provider_<name>.py` with:
+1. Create `universal_realtime_stt_tts/tts_provider_<name>.py` with:
    - A frozen `@dataclass` config class
-   - A class implementing `RealtimeTtsProvider` from `universal_realtime_audio/tts_provider.py`
+   - A class implementing `RealtimeTtsProvider` from `universal_realtime_stt_tts/tts_provider.py`
    - The protocol requires: `async def synthesize(text, language) -> AsyncIterator[bytes]`
 
 ## Optional: Semantic Understanding Metric

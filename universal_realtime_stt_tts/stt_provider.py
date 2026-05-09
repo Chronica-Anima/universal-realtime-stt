@@ -27,7 +27,7 @@ A provider instance goes through three phases:
 
 Implementing a new provider
 ----------------------------
-1. Create ``universal_realtime_audio/stt_provider_<name>.py``.
+1. Create ``universal_realtime_stt_tts/stt_provider_<name>.py``.
 
 2. Define a frozen ``@dataclass`` config with at least the API key and any
    provider-specific settings (model, URL overrides, VAD params). Universal

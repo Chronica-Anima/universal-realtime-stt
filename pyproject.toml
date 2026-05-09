@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "universal-realtime-audio"
+name = "universal-realtime-stt-tts"
 version = "0.2.0"
 description = "Multiprovider realtime speech-to-text and text-to-speech library with unified async interface"
 authors = [
@@ -41,12 +41,12 @@ benchmark = ["diff-match-patch>=20241021"]
 semantic = ["google-genai>=1.64.0"]
 dev = ["pytest"]
 all = [
-  "universal-realtime-audio[elevenlabs,speechmatics,google,gemini,benchmark]",
+  "universal-realtime-stt-tts[elevenlabs,speechmatics,google,gemini,benchmark]",
 ]
 
 [tool.setuptools.packages.find]
-include = ["universal_realtime_audio*"]
+include = ["universal_realtime_stt_tts*"]
 
 [project.urls]
-Homepage = "https://github.com/mr-napik/universal-realtime-audio"
-"Bug Tracker" = "https://github.com/mr-napik/universal-realtime-audio/issues"
+Homepage = "https://github.com/mr-napik/universal-realtime-stt-tts"
+"Bug Tracker" = "https://github.com/mr-napik/universal-realtime-stt-tts/issues"

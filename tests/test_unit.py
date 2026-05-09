@@ -1,5 +1,5 @@
 """
-Unit tests for universal_realtime_audio — no real API calls, no network.
+Unit tests for universal_realtime_stt_tts — no real API calls, no network.
 
 Exercises the core abstractions (TranscriptEvent, stt_session_task,
 transcript_ingest_task, TTS protocol) using mock providers.
@@ -12,9 +12,9 @@ import asyncio
 import unittest
 from typing import AsyncIterator
 
-from universal_realtime_audio._event_queue import SttEventQueue
-from universal_realtime_audio.stt_provider import TranscriptEvent, RealtimeSttProvider
-from universal_realtime_audio.tts_provider import RealtimeTtsProvider
+from universal_realtime_stt_tts._event_queue import SttEventQueue
+from universal_realtime_stt_tts.stt_provider import TranscriptEvent, RealtimeSttProvider
+from universal_realtime_stt_tts.tts_provider import RealtimeTtsProvider
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +87,7 @@ class TestTranscriptEvent(unittest.TestCase):
 class TestSttSessionTask(unittest.IsolatedAsyncioTestCase):
     async def test_events_forwarded_to_transcript_queue(self) -> None:
         """Provider events appear in transcript_queue; None sentinel at the end."""
-        from universal_realtime_audio.stt import stt_session_task
+        from universal_realtime_stt_tts.stt import stt_session_task
 
         preset = [
             TranscriptEvent(text="partial", is_final=False),
@@ -114,7 +114,7 @@ class TestSttSessionTask(unittest.IsolatedAsyncioTestCase):
         self.assertIs(received[-1], None)
 
     async def test_end_audio_called_after_none_chunk(self) -> None:
-        from universal_realtime_audio.stt import stt_session_task
+        from universal_realtime_stt_tts.stt import stt_session_task
 
         provider = MockSttProvider([TranscriptEvent(text="ok", is_final=True)])
         audio_q: asyncio.Queue[bytes | None] = asyncio.Queue()
@@ -127,7 +127,7 @@ class TestSttSessionTask(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(provider.end_audio_called)
 
     async def test_audio_chunks_forwarded_to_provider(self) -> None:
-        from universal_realtime_audio.stt import stt_session_task
+        from universal_realtime_stt_tts.stt import stt_session_task
 
         provider = MockSttProvider([TranscriptEvent(text="ok", is_final=True)])
         audio_q: asyncio.Queue[bytes | None] = asyncio.Queue()
@@ -143,7 +143,7 @@ class TestSttSessionTask(unittest.IsolatedAsyncioTestCase):
         self.assertIn(chunk, provider.sent_chunks)
 
     async def test_empty_text_events_filtered(self) -> None:
-        from universal_realtime_audio.stt import stt_session_task
+        from universal_realtime_stt_tts.stt import stt_session_task
 
         preset = [
             TranscriptEvent(text="   ", is_final=False),
@@ -168,7 +168,7 @@ class TestSttSessionTask(unittest.IsolatedAsyncioTestCase):
 
     async def test_silence_keepalive_sent_on_timeout(self) -> None:
         """When audio_queue is idle, silence bytes are sent to the provider."""
-        from universal_realtime_audio.stt import stt_session_task
+        from universal_realtime_stt_tts.stt import stt_session_task
 
         delay_event = asyncio.Event()
 
@@ -270,7 +270,7 @@ class TestProtocolCompliance(unittest.TestCase):
 
 class TestElevenLabsSttCallbacks(unittest.TestCase):
     def _make_provider(self):
-        from universal_realtime_audio.stt_provider_elevenlabs import (
+        from universal_realtime_stt_tts.stt_provider_elevenlabs import (
             ElevenLabsSttProvider, ElevenLabsSttConfig,
         )
         cfg = ElevenLabsSttConfig(api_key="fake-key")
@@ -360,7 +360,7 @@ class TestSttEventQueue(unittest.IsolatedAsyncioTestCase):
 
 class TestSpeechmaticsExtractSpeaker(unittest.TestCase):
     def _make_provider(self):
-        from universal_realtime_audio.stt_provider_speechmatics import (
+        from universal_realtime_stt_tts.stt_provider_speechmatics import (
             SpeechmaticsSttProvider, SpeechmaticsSttConfig,
         )
         cfg = SpeechmaticsSttConfig(api_key="fake-key")

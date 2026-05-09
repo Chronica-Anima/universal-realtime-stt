@@ -2,7 +2,7 @@ import asyncio
 from logging import getLogger
 from typing import List
 
-from universal_realtime_audio.stt_provider import TranscriptEvent
+from universal_realtime_stt_tts.stt_provider import TranscriptEvent
 
 logger = getLogger(__name__)
 

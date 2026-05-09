@@ -21,7 +21,7 @@ Internally two concurrent tasks handle the plumbing:
 import asyncio
 from logging import getLogger
 
-from universal_realtime_audio.stt_provider import RealtimeSttProvider, TranscriptEvent
+from universal_realtime_stt_tts.stt_provider import RealtimeSttProvider, TranscriptEvent
 
 logger = getLogger(__name__)
 

@@ -9,8 +9,8 @@ from urllib.parse import urlencode
 
 from websockets import connect, ConnectionClosed
 
-from universal_realtime_audio._event_queue import SttEventQueue
-from universal_realtime_audio.stt_provider import RealtimeSttProvider, TranscriptEvent
+from universal_realtime_stt_tts._event_queue import SttEventQueue
+from universal_realtime_stt_tts.stt_provider import RealtimeSttProvider, TranscriptEvent
 
 logger = getLogger(__name__)
 

@@ -53,8 +53,8 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import AsyncIterator, Optional
 
-from universal_realtime_audio._event_queue import SttEventQueue
-from universal_realtime_audio.stt_provider import TranscriptEvent
+from universal_realtime_stt_tts._event_queue import SttEventQueue
+from universal_realtime_stt_tts.stt_provider import TranscriptEvent
 
 logger = getLogger(__name__)
 

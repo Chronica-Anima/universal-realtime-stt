@@ -19,7 +19,7 @@ _DEFAULT_LOG_DIR = _Path("log")
 
 
 # Prefixes for project modules (DEBUG level in file)
-PROJECT_PREFIXES = ("universal_realtime_audio.", "__main__")
+PROJECT_PREFIXES = ("universal_realtime_stt_tts.", "__main__")
 LOG_FORMAT = "%(asctime)s %(levelname)s:%(name)s:%(funcName)s(): %(message)s"
 
 
