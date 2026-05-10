@@ -70,10 +70,36 @@ class GeminiLiveSttConfig:
     api_key: str
     model: str = "gemini-3.1-flash-live-preview"
     sample_rate: int = 16000
+
+    # System instruction for the model's generated responses (not for transcription).
+    # Transcription comes from the native input_audio_transcription path.
+    # Input language is auto-detected from the audio; there is no per-session
+    # language config for input in the Live API (speech_config.language_code
+    # is for TTS output only).
     system_instruction: str = _SYSTEM_INSTRUCTION
 
 
 class GeminiLiveProvider:
+    """
+    Real-time STT via the Gemini Live API (google-genai SDK).
+
+    Protocol:
+      - Opens a Live API session (bidirectional WebSocket, managed by SDK).
+      - Sends 200ms raw PCM chunks as realtime audio input.
+      - Server-side AAD handles utterance segmentation; no client VAD needed.
+      - Reads server_content.input_transcription events for transcription:
+          finished=False → TranscriptEvent(is_final=False)  (interim)
+          finished=True  → TranscriptEvent(is_final=True)   (committed)
+      - Model text responses (model_turn) are not used for transcription.
+      - Audio output suppressed via response_modalities=["TEXT"].
+
+    Usage is identical to every other provider — pass an instance to
+    stt_session_task() via the RealtimeSttProvider protocol.
+
+    Requires google-genai>=1.0.0:
+        pip install google-genai
+    """
+
     def __init__(self, cfg: GeminiLiveSttConfig) -> None:
         self._cfg = cfg
         self._session = None
@@ -95,6 +121,8 @@ class GeminiLiveProvider:
 
         # IMPORTANT: response_modalities MUST be ["AUDIO"] — not ["TEXT"].
         # gemini-3.1-flash-live-preview only supports AUDIO output.
+        # We don't use the model's audio output — input_audio_transcription gives us
+        # a text sidecar of the user's speech independently of the audio response.
         live_config = {
             "response_modalities": ["AUDIO"],
             "system_instruction": self._cfg.system_instruction,

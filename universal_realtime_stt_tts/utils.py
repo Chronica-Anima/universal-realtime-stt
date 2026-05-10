@@ -49,7 +49,7 @@ def setup_logging(level: int = DEBUG, log_dir: Path | None = None) -> Path:
     getLogger("urllib3").setLevel(INFO)
     getLogger("google").setLevel(INFO)
 
-    log_filename = log_dir / f"app_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    log_filename = log_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
     file_handler = FileHandler(log_filename, encoding="utf-8")
     file_handler.setLevel(level)
     file_handler.setFormatter(Formatter(LOG_FORMAT))

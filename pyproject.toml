@@ -48,5 +48,5 @@ all = [
 include = ["universal_realtime_stt_tts*"]
 
 [project.urls]
-Homepage = "https://github.com/mr-napik/universal-realtime-stt-tts"
-"Bug Tracker" = "https://github.com/mr-napik/universal-realtime-stt-tts/issues"
+Homepage = "https://github.com/Chronica-Anima/universal-realtime-stt-tts"
+"Bug Tracker" = "https://github.com/Chronica-Anima/universal-realtime-stt-tts/issues"

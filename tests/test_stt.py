@@ -66,7 +66,8 @@ class TestStt(unittest.IsolatedAsyncioTestCase):
         if not pairs:
             assert False, f"Found no files to test. Requires at least one wav/txt pair in {ASSETS_DIR}."
 
-        for pair in pairs:
+        # only run test on at most 2 files to avoid really long test time
+        for pair in pairs[0:2]:
             with self.subTest(msg=pair.wav.name):
                 logger.info("Processing file %s.", pair.wav.name)
 

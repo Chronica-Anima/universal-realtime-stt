@@ -76,6 +76,14 @@ from typing import AsyncIterator, Protocol, runtime_checkable
 
 @dataclass(frozen=True, init=True)
 class TranscriptEvent:
+    """
+    A single transcript event from an STT provider.
+
+    Attributes:
+        text: The transcribed text for this event.
+        is_final: True if this is a committed (final) transcript segment.
+            False for partial/interim results that may still change.
+    """
     text: str
     is_final: bool
     speaker: str | None = None

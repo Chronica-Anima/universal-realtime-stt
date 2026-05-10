@@ -28,6 +28,15 @@ class CartesiaSttConfig:
 
 
 class CartesiaInkProvider(RealtimeSttProvider):
+    """
+    Cartesia streaming STT over WebSocket (Ink-Whisper).
+
+    Protocol (docs):
+      - Connect to wss://api.cartesia.ai/stt/websocket with query params
+      - Send binary websocket messages containing raw audio
+      - Send text command 'done' to flush and close
+      - Receive JSON messages: type=transcript/flush_done/done/error
+    """
     def __init__(self, cfg: CartesiaSttConfig) -> None:
         self._cfg = cfg
         self._ws = None
@@ -46,6 +55,7 @@ class CartesiaInkProvider(RealtimeSttProvider):
         })
         url = f"{self._cfg.base_url}?{qs}"
 
+        # Auth: Cartesia requires X-API-Key and Cartesia-Version headers.
         self._ws = await connect(
             url,
             additional_headers={

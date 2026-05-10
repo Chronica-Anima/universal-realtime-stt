@@ -15,13 +15,34 @@ logger = getLogger(__name__)
 
 @dataclass(frozen=True)
 class GoogleSttConfig:
+    """
+    Configuration for Google Cloud Speech-to-Text realtime provider.
+
+    Note: Google uses Application Default Credentials (ADC) for authentication,
+    not an API key. Set GOOGLE_APPLICATION_CREDENTIALS environment variable
+    to point to your service account JSON file.
+
+    Provider-specific settings have defaults appropriate for Google.
+    Universal STT settings are imported from config.py but can be overridden.
+    """
+
     encoding: speech.RecognitionConfig.AudioEncoding = speech.RecognitionConfig.AudioEncoding.LINEAR16
     interim_results: bool = True
-    language: str = "cs-CZ"
+    language: str = "cs-CZ"  # Note: Google expects BCP-47 language code (e.g., "cs-CZ")
     sample_rate: int = 16000
 
 
 class GoogleRealtimeProvider(RealtimeSttProvider):
+    """
+    Google Cloud Speech-to-Text v1 streaming adapter.
+
+    Library: google-cloud-speech
+    Uses: SpeechClient.streaming_recognize(streaming_config, requests)
+
+    Authentication: Uses Application Default Credentials (ADC).
+    Set GOOGLE_APPLICATION_CREDENTIALS env var to your service account JSON.
+    """
+
     def __init__(self, cfg: Optional[GoogleSttConfig] = None) -> None:
         self._cfg = cfg or GoogleSttConfig()
         self._audio_q: asyncio.Queue[Optional[bytes]] = asyncio.Queue(maxsize=400)
@@ -89,6 +110,11 @@ class GoogleRealtimeProvider(RealtimeSttProvider):
             responses = client.streaming_recognize(streaming_config, request_iter())  # type: ignore[arg-type]
 
             for resp in responses:
+                # Note: Google is very verbose sending partial response after every
+                # submitted chunk. So we do not display them by default as it creates a LOT of debug.
+                # logger.debug("[STT] Google response:\n%r", resp)
+
+                # resp.results is a repeated field; iterate it.
                 for result in getattr(resp, "results", ()):
                     if not result.alternatives:
                         continue
