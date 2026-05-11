@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import AsyncIterator
 
-from config import (
+from universal_realtime_stt_tts.config import (
     AUDIO_SAMPLE_RATE,
     STT_LANGUAGE_ISO_639_1,
     STT_MIN_SILENCE_DURATION_MS,

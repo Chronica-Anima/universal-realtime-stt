@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import AsyncIterator
 
-from config import AUDIO_SAMPLE_RATE, STT_LANGUAGE_ISO_639_1, STT_VAD_SILENCE_THRESHOLD_S
+from universal_realtime_stt_tts.config import AUDIO_SAMPLE_RATE, STT_LANGUAGE_ISO_639_1, STT_VAD_SILENCE_THRESHOLD_S
 from universal_realtime_stt_tts._event_queue import SttEventQueue
 from universal_realtime_stt_tts.stt_provider import TranscriptEvent
 

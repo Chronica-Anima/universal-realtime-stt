@@ -7,7 +7,7 @@ from typing import AsyncIterator, Optional
 
 from google.cloud import speech
 
-from config import AUDIO_SAMPLE_RATE, STT_LANGUAGE_BCP_47
+from universal_realtime_stt_tts.config import AUDIO_SAMPLE_RATE, STT_LANGUAGE_BCP_47
 from universal_realtime_stt_tts._event_queue import SttEventQueue
 from universal_realtime_stt_tts.stt_provider import RealtimeSttProvider, TranscriptEvent
 

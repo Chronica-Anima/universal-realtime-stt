@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import AsyncIterator, Optional
 
-from config import AUDIO_SAMPLE_RATE
+from universal_realtime_stt_tts.config import AUDIO_SAMPLE_RATE
 from universal_realtime_stt_tts._event_queue import SttEventQueue
 from universal_realtime_stt_tts.stt_provider import TranscriptEvent
 
