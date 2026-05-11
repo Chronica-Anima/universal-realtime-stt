@@ -28,6 +28,8 @@ class SpeechmaticsSttProvider:
         self._cfg = cfg
         self._eq = SttEventQueue(logger)
         self._client = None
+        self._utterance_buf: list[str] = []
+        self._utterance_speaker: str | None = None
 
     async def __aenter__(self) -> "SpeechmaticsSttProvider":
         from speechmatics.rt import (
@@ -41,14 +43,28 @@ class SpeechmaticsSttProvider:
 
         @self._client.on(ServerMessageType.ADD_PARTIAL_TRANSCRIPT)
         def on_partial(msg):
-            self._emit_transcript(msg, is_final=False)
+            text = msg.get("metadata", {}).get("transcript", "").strip()
+            if text:
+                combined = " ".join(self._utterance_buf + [text])
+                speaker = self._extract_speaker(msg) or self._utterance_speaker
+                self._eq.put_nowait(TranscriptEvent(text=combined, is_final=False, speaker=speaker))
 
         @self._client.on(ServerMessageType.ADD_TRANSCRIPT)
         def on_final(msg):
-            self._emit_transcript(msg, is_final=True)
+            text = msg.get("metadata", {}).get("transcript", "").strip()
+            if text:
+                self._utterance_buf.append(text)
+                speaker = self._extract_speaker(msg)
+                if speaker:
+                    self._utterance_speaker = speaker
+
+        @self._client.on(ServerMessageType.END_OF_UTTERANCE)
+        def on_utterance_end(msg):
+            self._flush_utterance()
 
         @self._client.on(ServerMessageType.END_OF_TRANSCRIPT)
         def on_end(msg):
+            self._flush_utterance()
             self._eq.put_sentinel()
 
         diarization_cfg = None
@@ -79,11 +95,15 @@ class SpeechmaticsSttProvider:
         logger.info("[STT] Speechmatics: SDK session started.")
         return self
 
-    def _emit_transcript(self, msg: dict, is_final: bool) -> None:
-        text = msg.get("metadata", {}).get("transcript", "").strip()
+    def _flush_utterance(self) -> None:
+        if not self._utterance_buf:
+            return
+        text = " ".join(self._utterance_buf).strip()
+        speaker = self._utterance_speaker
+        self._utterance_buf.clear()
+        self._utterance_speaker = None
         if text:
-            speaker = self._extract_speaker(msg)
-            self._eq.put_nowait(TranscriptEvent(text=text, is_final=is_final, speaker=speaker))
+            self._eq.put_nowait(TranscriptEvent(text=text, is_final=True, speaker=speaker))
 
     @staticmethod
     def _extract_speaker(msg: dict) -> str | None:
