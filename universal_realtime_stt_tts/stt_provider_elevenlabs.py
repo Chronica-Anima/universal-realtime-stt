@@ -5,6 +5,14 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import AsyncIterator
 
+from config import (
+    AUDIO_SAMPLE_RATE,
+    STT_LANGUAGE_ISO_639_1,
+    STT_MIN_SILENCE_DURATION_MS,
+    STT_MIN_SPEECH_DURATION_MS,
+    STT_VAD_SILENCE_THRESHOLD_S,
+    STT_VAD_THRESHOLD,
+)
 from universal_realtime_stt_tts._event_queue import SttEventQueue
 from universal_realtime_stt_tts.stt_provider import TranscriptEvent
 
@@ -15,12 +23,12 @@ logger = getLogger(__name__)
 class ElevenLabsSttConfig:
     api_key: str
     model: str = "scribe_v2_realtime"
-    language: str = "cs"
-    sample_rate: int = 16000
-    vad_silence_threshold_s: float = 1.0
-    vad_threshold: float = 0.6
-    min_silence_duration_ms: int = 300
-    min_speech_duration_ms: int = 1000
+    language: str = STT_LANGUAGE_ISO_639_1
+    sample_rate: int = AUDIO_SAMPLE_RATE
+    vad_silence_threshold_s: float = STT_VAD_SILENCE_THRESHOLD_S
+    vad_threshold: float = STT_VAD_THRESHOLD
+    min_silence_duration_ms: int = STT_MIN_SILENCE_DURATION_MS
+    min_speech_duration_ms: int = STT_MIN_SPEECH_DURATION_MS
 
 
 class ElevenLabsSttProvider:

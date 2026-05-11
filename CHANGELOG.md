@@ -22,10 +22,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **ElevenLabs STT**: rewritten from raw WebSocket to official `elevenlabs` SDK with callback-based events
 - **Speechmatics STT**: rewritten from raw WebSocket to official `speechmatics-rt` SDK with decorator-based events
 - **Class renames**: `ElevenLabsRealtimeProvider` -> `ElevenLabsSttProvider`, `SpeechmaticsRealtimeProvider` -> `SpeechmaticsSttProvider`
-- **Provider configs decoupled from `config.py`**: each config dataclass uses literal defaults instead of importing shared constants
+- **Provider configs import from central `config.py`**: defaults for sample rate, language, VAD thresholds come from `config.py` (matching the original design)
 - **`utils.py` decoupled**: `setup_logging()` accepts `log_dir` parameter instead of importing `LOG_PATH`
 - **`transcript_queue` type**: `Queue[str | None]` -> `Queue[TranscriptEvent | None]`; both partial and final events are now routed through the queue
 - **Core dependencies trimmed**: only `websockets` and `python-dotenv` are required; provider SDKs are optional extras
+
+### Fixed
+
+- **Google provider hang**: `__aexit__` now has a 30s timeout on the streaming thread to prevent indefinite blocking
+- **Speechmatics provider hang**: `__aexit__` now has a 10s timeout on SDK cleanup; `end_session()` errors are caught gracefully
 
 ## [0.1.0]
 

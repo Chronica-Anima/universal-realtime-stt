@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 
 from websockets import connect, ConnectionClosed
 
+from config import AUDIO_CHANNELS, AUDIO_SAMPLE_RATE, STT_LANGUAGE_ISO_639_1, STT_VAD_SILENCE_THRESHOLD_S
 from universal_realtime_stt_tts._event_queue import SttEventQueue
 from universal_realtime_stt_tts.stt_provider import RealtimeSttProvider, TranscriptEvent
 
@@ -20,14 +21,14 @@ class DeepgramSttConfig:
     api_key: str
     base_url: str = "wss://api.deepgram.com/v1/listen"
     model: str = "nova-3"
-    language: str = "cs"
+    language: str = STT_LANGUAGE_ISO_639_1
     punctuate: bool = True
     smart_format: bool = True
     interim_results: bool = True
     encoding: str = "linear16"
-    sample_rate: int = 16000
-    channels: int = 1
-    endpointing_ms: int = 700
+    sample_rate: int = AUDIO_SAMPLE_RATE
+    channels: int = AUDIO_CHANNELS
+    endpointing_ms: int = int(STT_VAD_SILENCE_THRESHOLD_S * 1000)
 
 
 class DeepgramRealtimeProvider(RealtimeSttProvider):

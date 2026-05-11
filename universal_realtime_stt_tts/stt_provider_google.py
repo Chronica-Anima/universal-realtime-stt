@@ -7,6 +7,7 @@ from typing import AsyncIterator, Optional
 
 from google.cloud import speech
 
+from config import AUDIO_SAMPLE_RATE, STT_LANGUAGE_BCP_47
 from universal_realtime_stt_tts._event_queue import SttEventQueue
 from universal_realtime_stt_tts.stt_provider import RealtimeSttProvider, TranscriptEvent
 
@@ -28,8 +29,8 @@ class GoogleSttConfig:
 
     encoding: speech.RecognitionConfig.AudioEncoding = speech.RecognitionConfig.AudioEncoding.LINEAR16
     interim_results: bool = True
-    language: str = "cs-CZ"  # Note: Google expects BCP-47 language code (e.g., "cs-CZ")
-    sample_rate: int = 16000
+    language: str = STT_LANGUAGE_BCP_47
+    sample_rate: int = AUDIO_SAMPLE_RATE
 
 
 class GoogleRealtimeProvider(RealtimeSttProvider):
@@ -60,8 +61,13 @@ class GoogleRealtimeProvider(RealtimeSttProvider):
         try:
             await self.end_audio()
             if self._thread_task:
-                await self._thread_task
+                try:
+                    await asyncio.wait_for(self._thread_task, timeout=30.0)
+                except asyncio.TimeoutError:
+                    logger.warning("[STT] Google: streaming thread did not finish within 30s, forcing close")
+                    self._thread_task.cancel()
         finally:
+            self._eq.put_sentinel()
             self._thread_task = None
 
     async def send_audio(self, pcm_chunk: bytes) -> None:

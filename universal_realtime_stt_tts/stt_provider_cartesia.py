@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 
 from websockets import connect, ConnectionClosed
 
+from config import AUDIO_SAMPLE_RATE, AUDIO_ENCODING, STT_LANGUAGE_ISO_639_1, STT_VAD_SILENCE_THRESHOLD_S
 from universal_realtime_stt_tts._event_queue import SttEventQueue
 from universal_realtime_stt_tts.stt_provider import RealtimeSttProvider, TranscriptEvent
 
@@ -20,11 +21,11 @@ class CartesiaSttConfig:
     api_key: str
     model: str = "ink-whisper"
     base_url: str = "wss://api.cartesia.ai/stt/websocket"
-    language: str = "cs"
-    encoding: str = "pcm_s16le"
-    sample_rate: int = 16000
+    language: str = STT_LANGUAGE_ISO_639_1
+    encoding: str = AUDIO_ENCODING
+    sample_rate: int = AUDIO_SAMPLE_RATE
     min_volume: float = 0.15
-    max_silence_duration_secs: float = 0.7
+    max_silence_duration_secs: float = STT_VAD_SILENCE_THRESHOLD_S
 
 
 class CartesiaInkProvider(RealtimeSttProvider):

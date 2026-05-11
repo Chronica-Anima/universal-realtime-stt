@@ -406,21 +406,27 @@ class TestSpeechmaticsExtractSpeaker(unittest.TestCase):
         msg = {"results": [{"alternatives": []}]}
         self.assertIsNone(p._extract_speaker(msg))
 
-    def test_emit_transcript_with_speaker(self) -> None:
+    def test_flush_utterance_with_speaker(self) -> None:
         p = self._make_provider()
-        msg = {
-            "metadata": {"transcript": "hello world"},
-            "results": [{"alternatives": [{"speaker": "S1"}]}],
-        }
-        p._emit_transcript(msg, is_final=True)
+        p._utterance_buf.append("hello world")
+        p._utterance_speaker = "S1"
+        p._flush_utterance()
         ev = p._eq.get_nowait()
         self.assertEqual(ev.text, "hello world")
         self.assertTrue(ev.is_final)
         self.assertEqual(ev.speaker, "S1")
 
-    def test_emit_transcript_ignores_empty(self) -> None:
+    def test_flush_utterance_joins_segments(self) -> None:
         p = self._make_provider()
-        p._emit_transcript({"metadata": {"transcript": "  "}}, is_final=False)
+        p._utterance_buf.extend(["hello", "world"])
+        p._flush_utterance()
+        ev = p._eq.get_nowait()
+        self.assertEqual(ev.text, "hello world")
+        self.assertTrue(ev.is_final)
+
+    def test_flush_utterance_ignores_empty_buffer(self) -> None:
+        p = self._make_provider()
+        p._flush_utterance()
         self.assertTrue(p._eq.empty())
 
 

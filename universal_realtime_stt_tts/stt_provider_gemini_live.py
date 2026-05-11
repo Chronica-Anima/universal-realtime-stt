@@ -53,6 +53,7 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import AsyncIterator, Optional
 
+from config import AUDIO_SAMPLE_RATE
 from universal_realtime_stt_tts._event_queue import SttEventQueue
 from universal_realtime_stt_tts.stt_provider import TranscriptEvent
 
@@ -69,7 +70,7 @@ _END_AUDIO_DRAIN_S = 1.0
 class GeminiLiveSttConfig:
     api_key: str
     model: str = "gemini-3.1-flash-live-preview"
-    sample_rate: int = 16000
+    sample_rate: int = AUDIO_SAMPLE_RATE
 
     # System instruction for the model's generated responses (not for transcription).
     # Transcription comes from the native input_audio_transcription path.

@@ -92,7 +92,7 @@ ffmpeg -i input.mp3 -ac 1 -ar 16000 -c:a pcm_s16le output.wav
 
 ## Configuration
 
-`config.py` defines audio parameters (16kHz, mono, PCM16LE), VAD settings, and streaming parameters (200ms chunks) used by the benchmark and tests. Provider configs are self-contained frozen dataclasses with literal defaults — they do not import from `config.py`.
+`config.py` defines audio parameters (16kHz, mono, PCM16LE), VAD settings, and streaming parameters (200ms chunks). Provider config dataclasses import their defaults from `config.py` so that changing a parameter (e.g. VAD silence threshold) in one place propagates to all providers.
 
 - Language: `cs` (ISO 639-1) / `cs-CZ` (BCP-47, used by Google)
 - Audio: 16kHz sample rate, mono, 16-bit PCM (`pcm_s16le`)
@@ -101,7 +101,7 @@ ffmpeg -i input.mp3 -ac 1 -ar 16000 -c:a pcm_s16le output.wav
 ## Design Principles
 
 - **SDK-first for providers with official SDKs** — ElevenLabs and Speechmatics use their official Python SDKs. Deepgram and Cartesia use direct WebSocket. Google and Gemini use their respective Google SDKs.
-- **Self-contained provider configs** — each provider's frozen config dataclass has literal defaults (sample rate, language, VAD settings). No imports from `config.py`. API keys are injected at instantiation time.
+- **Central config, per-provider mapping** — provider config dataclasses import defaults from `config.py` (sample rate, language, VAD thresholds). Each provider maps these to its own parameter names and units. API keys are injected at instantiation time.
 - **Queue-based IPC** — audio and transcript queues decouple streaming from processing. `None` sentinels signal end-of-stream.
 - **Optional dependencies** — provider SDKs are optional extras in `pyproject.toml`. The library core only requires `websockets` and `python-dotenv`.
 
