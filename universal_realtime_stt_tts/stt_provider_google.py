@@ -93,32 +93,44 @@ class GoogleRealtimeProvider(RealtimeSttProvider):
         if loop is None:
             raise RuntimeError("GoogleRealtimeProvider: event loop not set")
 
-        client = speech.SpeechClient()
-
-        config = speech.RecognitionConfig(
-            encoding=self._cfg.encoding,  # type: ignore[arg-type]
-            sample_rate_hertz=self._cfg.sample_rate,  # type: ignore[arg-type]
-            language_code=self._cfg.language,  # type: ignore[arg-type]
-        )
-        streaming_config = speech.StreamingRecognitionConfig(
-            config=config,  # type: ignore[arg-type]
-            interim_results=self._cfg.interim_results,  # type: ignore[arg-type]
-        )
-
-        def request_iter():
-            while True:
-                chunk = asyncio.run_coroutine_threadsafe(self._audio_q.get(), loop).result()
-                if chunk is None:
-                    break
-                yield speech.StreamingRecognizeRequest(audio_content=chunk)  # type: ignore[arg-type]
-
+        # The whole body runs under one try/finally so any failure (including
+        # SpeechClient construction errors like missing GOOGLE_APPLICATION_CREDENTIALS,
+        # or config errors) is routed through _eq and reaches the receiver
+        # immediately. Otherwise an early raise would skip the sentinel and the
+        # receiver would block until __aexit__ tore the stream down.
         try:
+            client = speech.SpeechClient()
+
+            config = speech.RecognitionConfig(
+                encoding=self._cfg.encoding,  # type: ignore[arg-type]
+                sample_rate_hertz=self._cfg.sample_rate,  # type: ignore[arg-type]
+                language_code=self._cfg.language,  # type: ignore[arg-type]
+            )
+            streaming_config = speech.StreamingRecognitionConfig(
+                config=config,  # type: ignore[arg-type]
+                interim_results=self._cfg.interim_results,  # type: ignore[arg-type]
+            )
+
+            def request_iter():
+                while True:
+                    chunk = asyncio.run_coroutine_threadsafe(self._audio_q.get(), loop).result()
+                    if chunk is None:
+                        break
+                    yield speech.StreamingRecognizeRequest(audio_content=chunk)  # type: ignore[arg-type]
+
             responses = client.streaming_recognize(streaming_config, request_iter())  # type: ignore[arg-type]
 
+            first_response_logged = False
             for resp in responses:
                 # Note: Google is very verbose sending partial response after every
                 # submitted chunk. So we do not display them by default as it creates a LOT of debug.
                 # logger.debug("[STT] Google response:\n%r", resp)
+
+                # The first response (even an empty one) proves the gRPC stream is live.
+                # Logged at INFO so an apparent hang can be told apart from a never-connected stream.
+                if not first_response_logged:
+                    logger.info("[STT] Google: first response received, stream is live.")
+                    first_response_logged = True
 
                 # resp.results is a repeated field; iterate it.
                 for result in getattr(resp, "results", ()):
@@ -127,12 +139,13 @@ class GoogleRealtimeProvider(RealtimeSttProvider):
                     text = (result.alternatives[0].transcript or "").strip()
                     if not text:
                         continue
-                    if bool(getattr(result, "is_final", False)):
+                    is_final = bool(getattr(result, "is_final", False))
+                    if is_final:
                         logger.debug("[STT] Google: final transcript received.")
-                        asyncio.run_coroutine_threadsafe(
-                            self._eq.put(TranscriptEvent(text=text, is_final=True)),
-                            loop,
-                        ).result()
+                    asyncio.run_coroutine_threadsafe(
+                        self._eq.put(TranscriptEvent(text=text, is_final=is_final)),
+                        loop,
+                    ).result()
 
         except Exception as e:
             logger.exception("[STT] Google streaming crashed: %r", e)
