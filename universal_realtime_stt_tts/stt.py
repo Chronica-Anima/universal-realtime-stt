@@ -8,9 +8,16 @@ Communication is fully queue-based:
 Internally two concurrent tasks handle the plumbing:
 
   _audio_sender   — pulls PCM chunks from audio_queue, forwards them to the
-                    provider via send_audio(). Sends silence keepalive when no
-                    audio arrives within 200ms. A None chunk signals end-of-audio
+                    provider via send_audio(). A None chunk signals end-of-audio
                     and triggers provider.end_audio().
+
+                    Silence keepalive is a backstop only: if no audio arrives
+                    for several seconds, a small silence chunk is sent to keep
+                    the provider session open (some providers close the stream
+                    after an extended idle). The threshold is deliberately long
+                    so normal pacing jitter does not interleave silence with
+                    real audio — that interleaving corrupts provider VAD and
+                    in particular caused Google's gRPC stream to stop responding.
 
   _event_receiver — iterates the provider's event stream. All transcript events
                     (partial and final) are pushed into transcript_queue as
@@ -26,7 +33,7 @@ from universal_realtime_stt_tts.stt_provider import RealtimeSttProvider, Transcr
 logger = getLogger(__name__)
 
 _SILENCE_CHUNK = b"\x00\x00" * 1600  # 100ms silence at 16kHz mono 16-bit
-_AUDIO_TIMEOUT_S = 0.2
+_AUDIO_IDLE_KEEPALIVE_S = 5.0  # only fires after extended idle, not on normal jitter
 
 
 async def _audio_sender(
@@ -37,8 +44,9 @@ async def _audio_sender(
     try:
         while conversation_running.is_set():
             try:
-                chunk = await asyncio.wait_for(audio_queue.get(), timeout=_AUDIO_TIMEOUT_S)
+                chunk = await asyncio.wait_for(audio_queue.get(), timeout=_AUDIO_IDLE_KEEPALIVE_S)
             except asyncio.TimeoutError:
+                logger.debug("[STT] No audio for %.1fs, sending silence keepalive.", _AUDIO_IDLE_KEEPALIVE_S)
                 chunk = _SILENCE_CHUNK
             if chunk is None:
                 break
