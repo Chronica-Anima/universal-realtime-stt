@@ -74,8 +74,17 @@ class ElevenLabsSttProvider:
             self._eq.put_nowait(TranscriptEvent(text=text, is_final=is_final))
 
     def _on_error(self, err) -> None:
+        if self._closed or self._is_clean_close(err):
+            logger.debug("[STT] ElevenLabs: close-related event ignored: %s", err)
+            self._eq.put_sentinel()
+            return
         logger.error("[STT] ElevenLabs: %s", err)
         self._eq.set_error(RuntimeError(f"ElevenLabs STT error: {err}"))
+
+    @staticmethod
+    def _is_clean_close(err) -> bool:
+        text = err.get("error", "") if isinstance(err, dict) else str(err)
+        return "1000 (OK)" in text or "User ended conversation" in text
 
     def _on_close(self) -> None:
         self._eq.put_sentinel()

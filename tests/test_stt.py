@@ -51,8 +51,7 @@ class TestStt(unittest.IsolatedAsyncioTestCase):
         Stream all asset files through a provider and assert output length.
 
         For each WAV/TXT pair, instantiates the provider, runs the full
-        transcribe-and-diff pipeline, writes an HTML diff report to out/,
-        and checks that the transcript length is within 14% of expected.
+        transcribe-and-diff pipeline, writes an HTML diff report to out/.
 
         custom_metric_fn: optional async (expected, got) -> CustomMetricResult.
             When supplied, the result is embedded in the diff report and HTML.
