@@ -68,7 +68,7 @@ SER measures whether the information content of a transcript survived, regardles
 
 An LLM (Gemini) receives both the reference transcript and the STT output. It extracts atomic semantic facts (subject-predicate-object triples) from each text, then classifies each fact as present in both, expected only (omission) or stt only (hallucination).
 
-`SER = facts_expected / (facts_both + facts_expected) x 100`
+`SER = facts_missing / (facts_both + facts_missing) * 100`
 
 Lower is better. A SER of 0% means all semantic information from the reference was preserved in the STT output.
 

@@ -69,6 +69,8 @@ The system uses async/await throughout with queue-based communication between co
 
 **Session orchestration** (`stt.py`): `stt_session_task()` runs two concurrent async tasks — a sender (audio queue -> provider, with silence keepalive) and a receiver (provider events -> transcript queue). Both partial and final events are routed through the queue. Queues use `None` sentinels to signal completion.
 
+**Shared event queue** (`_event_queue.py`): `SttEventQueue` encapsulates the queue + error + sentinel + recv-guard pattern shared across providers. Provider classes compose it instead of duplicating boilerplate. Handles WebSocket close exceptions, cancellation, and ensures a single sentinel reaches the consumer.
+
 ### `helpers/` — Test and benchmark support
 
 **Transcribe + diff pipeline** (`helpers/transcribe.py`): `transcribe_and_diff()` ties everything together — streams audio, collects transcripts, compares against ground truth, writes HTML diff report. Accepts an optional `custom_metric_fn` for plugging in additional metrics (e.g. semantic understanding).
@@ -92,7 +94,9 @@ ffmpeg -i input.mp3 -ac 1 -ar 16000 -c:a pcm_s16le output.wav
 
 ## Configuration
 
-`config.py` defines audio parameters (16kHz, mono, PCM16LE), VAD settings, and streaming parameters (200ms chunks). Provider config dataclasses import their defaults from `config.py` so that changing a parameter (e.g. VAD silence threshold) in one place propagates to all providers.
+`universal_realtime_stt_tts/config.py` defines audio parameters (16kHz, mono, PCM16LE), VAD settings, and streaming parameters (200ms chunks). Provider config dataclasses import their defaults from `config.py` so that changing a parameter (e.g. VAD silence threshold) in one place propagates to all providers.
+
+`pytest_config.py` (project root) holds paths and pacing for the test suite and benchmark — `OUT_PATH`, `ASSETS_DIR`, `LOG_PATH`, `CHUNK_MS`, `TEST_REALTIME_FACTOR`, `FINAL_SILENCE_S`. Library code never imports it; only tests and `benchmark.py` do.
 
 - Language: `cs` (ISO 639-1) / `cs-CZ` (BCP-47, used by Google)
 - Audio: 16kHz sample rate, mono, 16-bit PCM (`pcm_s16le`)

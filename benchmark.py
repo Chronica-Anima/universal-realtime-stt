@@ -47,11 +47,12 @@ from typing import Any, Awaitable, Callable
 
 from dotenv import load_dotenv
 
-from config import AUDIO_SAMPLE_RATE, CHUNK_MS, TEST_REALTIME_FACTOR, FINAL_SILENCE_S, OUT_PATH, ASSETS_DIR
 from helpers.diff_report import CustomMetricResult, DiffReport
 from helpers.load_assets import get_test_files, AssetPair
 from helpers.stream_wav import inspect_wav
 from helpers.transcribe import transcribe_and_diff
+from pytest_config import CHUNK_MS, TEST_REALTIME_FACTOR, FINAL_SILENCE_S, OUT_PATH, ASSETS_DIR, LOG_PATH
+from universal_realtime_stt_tts.config import AUDIO_SAMPLE_RATE
 from universal_realtime_stt_tts.stt_provider_cartesia import CartesiaInkProvider, CartesiaSttConfig
 from universal_realtime_stt_tts.stt_provider_deepgram import DeepgramRealtimeProvider, DeepgramSttConfig
 from universal_realtime_stt_tts.stt_provider_elevenlabs import ElevenLabsSttProvider, ElevenLabsSttConfig
@@ -60,8 +61,8 @@ from universal_realtime_stt_tts.stt_provider_google import GoogleRealtimeProvide
 from universal_realtime_stt_tts.stt_provider_speechmatics import SpeechmaticsSttProvider, SpeechmaticsSttConfig
 from universal_realtime_stt_tts.utils import setup_logging
 
-from config import LOG_PATH as _LOG_PATH
-setup_logging(INFO, log_dir=_LOG_PATH)
+
+setup_logging(INFO, log_dir=LOG_PATH)
 logger = getLogger(__name__)
 load_dotenv()
 

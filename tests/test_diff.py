@@ -16,8 +16,8 @@ from tempfile import TemporaryDirectory
 
 from dotenv import load_dotenv
 
-from config import OUT_PATH
 from helpers.diff_report import DiffReport
+from pytest_config import OUT_PATH
 
 
 # Czech sample texts — expected is ground truth, got simulates STT output with typical errors.
