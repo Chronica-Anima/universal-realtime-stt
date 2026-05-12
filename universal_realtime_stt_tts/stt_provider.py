@@ -27,12 +27,12 @@ A provider instance goes through three phases:
 
 Implementing a new provider
 ----------------------------
-1. Create ``lib/stt_provider_<name>.py``.
+1. Create ``universal_realtime_stt_tts/stt_provider_<name>.py``.
 
 2. Define a frozen ``@dataclass`` config with at least the API key and any
    provider-specific settings (model, URL overrides, VAD params). Universal
-   audio settings (sample rate, language) should default to values from
-   ``config.py``.
+   audio settings (sample rate, language) should use literal defaults
+   (e.g. ``sample_rate: int = 16000``).
 
 3. Implement a class satisfying this protocol::
 
@@ -71,7 +71,7 @@ Implementing a new provider
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import AsyncIterator, Protocol
+from typing import AsyncIterator, Protocol, runtime_checkable
 
 
 @dataclass(frozen=True, init=True)
@@ -86,8 +86,10 @@ class TranscriptEvent:
     """
     text: str
     is_final: bool
+    speaker: str | None = None
 
 
+@runtime_checkable
 class RealtimeSttProvider(Protocol):
     """
     Structural protocol for real-time STT providers.

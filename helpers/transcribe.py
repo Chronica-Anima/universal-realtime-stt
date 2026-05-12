@@ -7,8 +7,8 @@ from typing import Awaitable, Callable, Optional
 from helpers.diff_report import CustomMetricResult, DiffReport
 from helpers.stream_wav import stream_wav_file, QueueFullError, logger
 from helpers.transcript_ingest import transcript_ingest_task
-from lib.stt import stt_session_task
-from lib.stt_provider import RealtimeSttProvider
+from universal_realtime_stt_tts.stt import stt_session_task
+from universal_realtime_stt_tts.stt_provider import RealtimeSttProvider
 
 
 async def transcribe_wav_realtime(

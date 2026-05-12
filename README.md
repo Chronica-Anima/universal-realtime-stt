@@ -1,157 +1,204 @@
-# Universal Realtime STT Library
+# universal-realtime-stt-tts
 
-A provider-agnostic library for realtime speech-to-text.
+Provider-agnostic realtime speech-to-text (STT) and text-to-speech (TTS) for Python, built around a uniform `async`/`await` interface.
 
-**Supports:**
-- Cartesia https://cartesia.ai/
-- Deepgram (nova-3) https://deepgram.com/
-- ElevenLabs (scribe v2 realtime) https://elevenlabs.io/
-- Google [Cloud Speech-to-Text API](https://console.cloud.google.com/apis/library/speech.googleapis.com)
-- Speechmatics https://www.speechmatics.com/
+Wire up one async task, push PCM chunks into an input queue, and consume `TranscriptEvent`s from an output queue. Swap providers without changing the surrounding code.
 
-Offers unified async interface — start one asyncio task, feed audio chunks to an input queue, and consume transcripts from an output queue without worrying about details.
+## Features
 
-Providers are accessed directly via WebSocket (no provider-specific SDKs, except Google). This keeps dependencies light.
+- **Realtime STT** across multiple providers: Cartesia (Ink-Whisper), Deepgram (Nova-3), ElevenLabs (Scribe v2 Realtime), Google Cloud Speech-to-Text, Speechmatics, and Gemini Live.
+- **Realtime TTS** via ElevenLabs (PCM stream output).
+- **Unified async protocol** (`RealtimeSttProvider`, `RealtimeTtsProvider`) using `typing.Protocol`. Implement a new provider by satisfying the methods, no inheritance required.
+- **Queue-based streaming**: audio in, `TranscriptEvent` out. `None` sentinels signal end-of-stream.
+- **Partial and final transcripts** are both delivered; the consumer decides which to act on.
+- **Speaker diarization** field on `TranscriptEvent` (populated by Speechmatics today).
+- **Central config** (`config.py`) keeps sample rate, language, and VAD thresholds in one place; each provider maps them to its native parameter names.
+- **Optional dependencies**: the core only requires `websockets` and `python-dotenv`. Install per-provider extras as needed.
 
 ## Installation
 
-### Setup
+Requires Python 3.10+.
 
 ```bash
-python3.13 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+pip install universal-realtime-stt-tts                          # core (Cartesia + Deepgram usable already)
+pip install "universal-realtime-stt-tts[elevenlabs]"            # pulls the ElevenLabs SDK
+pip install "universal-realtime-stt-tts[speechmatics]"          # pulls the Speechmatics SDK
+pip install "universal-realtime-stt-tts[google]"                # pulls google-cloud-speech
+pip install "universal-realtime-stt-tts[gemini]"                # pulls google-genai (Gemini Live + SER metric)
+pip install "universal-realtime-stt-tts[all]"                   # every provider SDK + benchmark helpers
 ```
 
-### IntelliJ IDEA Configuration (Mac)
+Cartesia and Deepgram are reached over raw WebSocket and need no provider SDK; they work from the core install. ElevenLabs, Speechmatics, Google, and Gemini Live each require their official Python SDK, pulled in by the corresponding extra.
 
-After creating the venv:
+### Provider credentials
 
-1. Right-click on project → Open Module Settings (Option + Down)
-2. Platform Settings → SDKs → Add SDK (+) → Add Python SDK from disk ...
-3. Select existing SDK, type Python
-4. Point to `<project>/.venv/bin/python`
-5. Restart IDEA — the terminal should automatically activate `.venv`
+API keys are supplied to each provider's config dataclass at instantiation. The library does not read environment variables itself; pick whichever loader you prefer (`python-dotenv`, OS env, secret manager).
 
-Then install dependencies from `requirements.txt`.
+| Provider     | Credential                                                  |
+| ------------ | ----------------------------------------------------------- |
+| Cartesia     | API key                                                     |
+| Deepgram     | API key                                                     |
+| ElevenLabs   | API key                                                     |
+| Google       | `GOOGLE_APPLICATION_CREDENTIALS` env var (ADC service JSON) |
+| Speechmatics | API key                                                     |
+| Gemini Live  | API key                                                     |
 
-### Environment Variables
+## Quick start: STT
 
-Create a `.env` file with provider API keys:
+```python
+import asyncio
+from universal_realtime_stt_tts.stt import stt_session_task
+from universal_realtime_stt_tts.stt_provider import TranscriptEvent
+from universal_realtime_stt_tts.stt_provider_deepgram import (
+    DeepgramRealtimeProvider, DeepgramSttConfig,
+)
 
-```
-ELEVENLABS_API_KEY=<key>
-DEEPGRAM_API_KEY=<key>
-SPEECHMATICS_API_KEY=<key>
-CARTESIA_API_KEY=<key>
-GOOGLE_APPLICATION_CREDENTIALS=<path-to-service-account.json>
 
-# Optional — enables semantic understanding metric in benchmark and tests
-GEMINI_API_KEY=<key>
-```
+async def main():
+    provider = DeepgramRealtimeProvider(DeepgramSttConfig(api_key="..."))
 
-## Integration and Use
+    audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=40)
+    transcript_queue: asyncio.Queue[TranscriptEvent | None] = asyncio.Queue(maxsize=200)
+    running = asyncio.Event()
+    running.set()
 
-The key modules have detailed docstrings explaining usage patterns and the queue-based architecture:
+    session = asyncio.create_task(
+        stt_session_task(provider, audio_queue, transcript_queue, running)
+    )
 
-- **`lib/stt_provider.py`** — defines the `RealtimeSttProvider` protocol. Start here to understand the provider interface and how to implement a new one (includes a full code skeleton).
-- **`lib/stt.py`** — the core `stt_session_task()` function that bridges audio input and transcript output. Docstring shows how to wire up the queues and run a session.
-- **`lib/helper_transcript_ingest.py`** — a ready-made transcript consumer and a reference for building your own real-time consumer.
+    async def feed_audio():
+        # PCM 16-bit LE, 16 kHz, mono, 200 ms chunks (6400 bytes)
+        with open("speech.pcm", "rb") as f:
+            while chunk := f.read(6400):
+                await audio_queue.put(chunk)
+        await audio_queue.put(None)  # signal end of audio
 
-For end-to-end examples, see:
+    asyncio.create_task(feed_audio())
 
-- **`lib/helper_stream_wav.py`** — `transcribe_wav_realtime()` ties everything together: queues, STT session, transcript ingestion, and WAV streaming.
-- **`benchmark.py`** — runs all providers in parallel with result collation into a TSV report.
+    while (event := await transcript_queue.get()) is not None:
+        if event.is_final:
+            print(event.text)
 
-## Architecture
+    await session
 
-### Config Architecture
 
-- **Universal config** (`config.py`): Provider-independent STT parameters — language, audio format, silence thresholds, VAD settings. Each provider may use slightly different naming and notation, but the source values come from here.
-- **Provider config**: Each provider has a frozen dataclass with provider-specific settings (model name, URL, translation of universal parameter names to provider-specific ones).
-- **API keys**: Injected only at provider instantiation time. Secrets are not handled inside the library — they are provided at the top level so that various methods can be used conveniently without diving deep into the lib.
-
-### Dependencies
-
-Provider-specific SDKs are avoided where possible. All providers except Google are accessed directly via WebSocket. This keeps the dependency footprint small but means more maintenance work if a provider changes their API.
-
-`google-genai` is an optional dependency (commented out in `requirements.txt`) used only by the semantic understanding metric. Install it separately if needed — see [Semantic Understanding Metric](#semantic-understanding-metric).
-
-## Testing
-
-The test suite validates STT provider accuracy against ground-truth transcripts.
-
-1. Scans the `assets/` directory for WAV/TXT file pairs
-2. Streams each audio file to a realtime STT API and captures committed transcripts
-3. Compares output against the corresponding TXT file (ground truth) and calculates a diff
-
-**Note:** While the tests run on static files, they closely mimic realtime behavior — audio is streamed with realistic pacing and committed transcripts are received in real time.
-
-### Running Tests
-
-```bash
-# All providers
-pytest tests/test_stt.py -v
-
-# Single provider
-pytest tests/test_stt.py::TestStt::test_google -v
-pytest tests/test_stt.py::TestStt::test_eleven_labs -v
-pytest tests/test_stt.py::TestStt::test_deepgram -v
-pytest tests/test_stt.py::TestStt::test_speechmatics -v
-pytest tests/test_stt.py::TestStt::test_cartesia -v
-
-# Speechmatics with LLM semantic understanding metric (requires GEMINI_API_KEY + google-genai)
-pytest tests/test_stt.py::TestStt::test_speechmatics_semantics -v
-
-# Diff report and LLM metric unit tests
-pytest tests/test_diff.py -v
+asyncio.run(main())
 ```
 
-### Test Output
+The same code switches providers by changing two imports and the config:
 
-- HTML diff reports are generated in `out/`
-- Logs are written to `log/`
+```python
+from universal_realtime_stt_tts.stt_provider_speechmatics import (
+    SpeechmaticsSttProvider, SpeechmaticsSttConfig,
+)
 
-### Audio Format
+provider = SpeechmaticsSttProvider(SpeechmaticsSttConfig(api_key="..."))
+```
 
-Test audio must be PCM 16kHz, mono, 16-bit. Convert with:
+### `TranscriptEvent`
+
+```python
+@dataclass(frozen=True)
+class TranscriptEvent:
+    text: str
+    is_final: bool
+    speaker: str | None = None  # populated by providers that support diarization
+```
+
+Partial events (`is_final=False`) are emitted as the recognizer updates its hypothesis. Final events (`is_final=True`) are committed segments.
+
+## Quick start: TTS
+
+```python
+import asyncio
+from universal_realtime_stt_tts.tts_provider_elevenlabs import (
+    ElevenLabsTtsProvider, ElevenLabsTtsConfig,
+)
+
+
+async def main():
+    provider = ElevenLabsTtsProvider(ElevenLabsTtsConfig(api_key="..."))
+    async for pcm_chunk in provider.synthesize("Hello, world.", language="en"):
+        # pcm_chunk is raw 16 kHz PCM ready to play or persist
+        ...
+
+
+asyncio.run(main())
+```
+
+## How it works
+
+`stt_session_task()` runs two concurrent tasks for the duration of a session:
+
+- a sender that pulls PCM chunks from `audio_queue` and forwards them to the provider, injecting 100 ms of silence when no audio arrives within 200 ms (keeps providers from timing out during pauses);
+- a receiver that drains the provider's event stream into `transcript_queue` and pushes `None` when the provider closes.
+
+Audio format is fixed at the streaming layer: 16 kHz, mono, 16-bit signed little-endian PCM. To convert other formats:
 
 ```bash
 ffmpeg -i input.mp3 -ac 1 -ar 16000 -c:a pcm_s16le output.wav
 ```
 
-## Semantic Understanding Metric
+## Overriding defaults
 
-In addition to WER and CER, the benchmark and tests support an optional **Semantic Error Rate (SER)** metric. Instead of counting character or word differences, it uses a Gemini LLM to extract semantic facts (subject / predicate / object) from both the expected and STT transcripts and measures how many expected facts are missing from the STT output.
+Defaults live in `universal_realtime_stt_tts.config` (language, VAD thresholds, sample rate). Each provider's config dataclass reads from those values but can be overridden per-instance:
+
+```python
+from universal_realtime_stt_tts.stt_provider_speechmatics import SpeechmaticsSttConfig
+
+config = SpeechmaticsSttConfig(
+    api_key="...",
+    language="en",
+    operating_point="enhanced",
+    diarization="speaker",
+)
+```
+
+## Implementing a new provider
+
+The protocol is structural (`typing.Protocol`):
+
+```python
+class RealtimeSttProvider(Protocol):
+    async def __aenter__(self) -> "RealtimeSttProvider": ...
+    async def __aexit__(self, exc_type, exc, tb) -> None: ...
+    async def send_audio(self, pcm_chunk: bytes) -> None: ...
+    async def end_audio(self) -> None: ...
+    def events(self) -> AsyncIterator[TranscriptEvent]: ...
+```
+
+See `universal_realtime_stt_tts/stt_provider.py` for the full lifecycle docstring and a code skeleton, and any of the `stt_provider_*.py` modules for a working reference.
+
+## Optional: Semantic Error Rate (SER)
+
+In addition to standard WER and CER, the bundled benchmark and `transcribe_and_diff()` helper accept a custom metric callback. The repository ships one implementation that uses Gemini to extract subject/predicate/object facts from both the expected and produced transcripts, then scores how much of the expected meaning survived:
 
 ```
 SER = facts_missing / (facts_both + facts_missing) * 100
 ```
 
-Lower is better — same convention as WER and CER.
+Lower is better, same convention as WER and CER. Enable it by setting `GEMINI_API_KEY` and installing the `[gemini]` (or `[semantic]`) extra. See [`doc/semantic_understanding_metric.md`](doc/semantic_understanding_metric.md) for the data model and how to plug in your own custom metric.
 
-**To enable:**
+## Repository extras
 
-1. Add `GEMINI_API_KEY=<key>` to `.env`
-2. Install the optional dependency: `pip install google-genai`
-   (or uncomment `google-genai` in `requirements.txt` and re-run `pip install -r requirements.txt`)
+The repository (not the published wheel) ships additional tooling for evaluating providers:
 
-When active, `benchmark.py` adds a `custom_metric` (SER) column to the TSV report, and HTML diff reports gain a *Semantic Understanding* section with four stat cards (SER, Understanding, Missing%, Extra%) and a grouped fact list.
+- `benchmark.py` runs every configured provider in parallel against a directory of WAV/TXT pairs and writes a TSV report plus per-run HTML diffs.
+- `tests/test_stt.py` contains end-to-end smoke tests for each provider; `tests/test_unit.py` covers the core protocol and orchestration with mocks (no API keys required).
+- `tests/test_diff.py` exercises the diff report and LLM metric.
 
-See [`doc/semantic_understanding_metric.md`](doc/semantic_understanding_metric.md) for full details, including how to write your own custom metric.
+```bash
+pytest tests/test_unit.py -v                      # offline
+pytest tests/test_stt.py::TestStt::test_deepgram  # one provider
+python benchmark.py                               # all configured providers
+```
 
-## TODO
+## License
 
-### Code
-- Verify configuration and retrieval of transcripts (as with Speechmatics, where we initially did not capture everything returned) — especially Google might suffer from a similar problem
-- Optionally install all provider SDKs in a separate project and verify if there is something to improve (limit to providers we would consider using)
+MIT. See [LICENSE](LICENSE).
 
-### More Providers to Consider
-- OpenAI (check if they provide realtime STT)
-- Soniox
-- AWS
-- Azure
+## Links
 
-### Publication
-- Consider whether to publish on PyPI
-- Consider licensing conditions
+- Source and issues: <https://github.com/Chronica-Anima/universal-realtime-stt-tts>
+- Changelog: [CHANGELOG.md](CHANGELOG.md)
+- Contributing: [CONTRIBUTING.md](CONTRIBUTING.md)

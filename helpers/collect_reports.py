@@ -10,7 +10,7 @@ import re
 import sys
 from urllib.parse import unquote
 
-from config import OUT_PATH
+from pytest_config import OUT_PATH
 
 OUT_DIR = OUT_PATH
 OUTPUT_TSV = OUT_DIR / "report_summary.tsv"

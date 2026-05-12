@@ -3,16 +3,16 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "universal-realtime-stt"
-version = "0.1.0"
-description = "Multiprovider realtime speech-to-text library with unified async interface"
+name = "universal-realtime-stt-tts"
+version = "0.2.0"
+description = "Multiprovider realtime speech-to-text and text-to-speech library with unified async interface"
 authors = [
   { name = "Tomáš Kubeš" }
 ]
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
-keywords = ["speech-to-text", "stt", "realtime", "websocket", "asr", "transcription"]
+keywords = ["speech-to-text", "text-to-speech", "stt", "tts", "realtime", "websocket", "asr", "transcription"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
@@ -29,17 +29,24 @@ classifiers = [
 ]
 dependencies = [
   "websockets>=16.0.0",
-  "google-cloud-speech>=2.36.0",
-  "diff-match-patch>=20241021",
   "python-dotenv>=1.2.1",
 ]
 
 [project.optional-dependencies]
-# Semantic understanding metric (LLM-based SER via Gemini)
+elevenlabs = ["elevenlabs>=2.0.0"]
+speechmatics = ["speechmatics-rt>=1.0.0"]
+google = ["google-cloud-speech>=2.36.0"]
+gemini = ["google-genai>=1.64.0"]
+benchmark = ["diff-match-patch>=20241021"]
 semantic = ["google-genai>=1.64.0"]
-# Development / testing
 dev = ["pytest"]
+all = [
+  "universal-realtime-stt-tts[elevenlabs,speechmatics,google,gemini,benchmark]",
+]
+
+[tool.setuptools.packages.find]
+include = ["universal_realtime_stt_tts*"]
 
 [project.urls]
-Homepage = "https://github.com/mr-napik/universal-realtime-stt"
-"Bug Tracker" = "https://github.com/mr-napik/universal-realtime-stt/issues"
+Homepage = "https://github.com/Chronica-Anima/universal-realtime-stt-tts"
+"Bug Tracker" = "https://github.com/Chronica-Anima/universal-realtime-stt-tts/issues"
