@@ -1,6 +1,6 @@
 # secrets files
 .env*
-stt-test-*.json
+key-*.json
 
 # temp
 tmp/
