@@ -45,16 +45,19 @@ class SpeechmaticsSttProvider:
 
         @self._client.on(ServerMessageType.ADD_PARTIAL_TRANSCRIPT)
         def on_partial(msg):
-            text = msg.get("metadata", {}).get("transcript", "").strip()
-            if text:
-                combined = " ".join(self._utterance_buf + [text])
-                speaker = self._extract_speaker(msg) or self._utterance_speaker
-                self._eq.put_nowait(TranscriptEvent(text=combined, is_final=False, speaker=speaker))
+            # Partial transcripts emit a high-volume stream of debug output downstream;
+            # consumers only act on finals, so suppress them here.
+            # text = msg.get("metadata", {}).get("transcript", "")
+            # if text.strip():
+            #     combined = ("".join(self._utterance_buf) + text).strip()
+            #     speaker = self._extract_speaker(msg) or self._utterance_speaker
+            #     self._eq.put_nowait(TranscriptEvent(text=combined, is_final=False, speaker=speaker))
+            pass
 
         @self._client.on(ServerMessageType.ADD_TRANSCRIPT)
         def on_final(msg):
-            text = msg.get("metadata", {}).get("transcript", "").strip()
-            if text:
+            text = msg.get("metadata", {}).get("transcript", "")
+            if text.strip():
                 self._utterance_buf.append(text)
                 speaker = self._extract_speaker(msg)
                 if speaker:
@@ -100,7 +103,7 @@ class SpeechmaticsSttProvider:
     def _flush_utterance(self) -> None:
         if not self._utterance_buf:
             return
-        text = " ".join(self._utterance_buf).strip()
+        text = "".join(self._utterance_buf).strip()
         speaker = self._utterance_speaker
         self._utterance_buf.clear()
         self._utterance_speaker = None
