@@ -45,14 +45,11 @@ class SpeechmaticsSttProvider:
 
         @self._client.on(ServerMessageType.ADD_PARTIAL_TRANSCRIPT)
         def on_partial(msg):
-            # Partial transcripts emit a high-volume stream of debug output downstream;
-            # consumers only act on finals, so suppress them here.
-            # text = msg.get("metadata", {}).get("transcript", "")
-            # if text.strip():
-            #     combined = ("".join(self._utterance_buf) + text).strip()
-            #     speaker = self._extract_speaker(msg) or self._utterance_speaker
-            #     self._eq.put_nowait(TranscriptEvent(text=combined, is_final=False, speaker=speaker))
-            pass
+            text = msg.get("metadata", {}).get("transcript", "")
+            if text.strip():
+                combined = ("".join(self._utterance_buf) + text).strip()
+                speaker = self._extract_speaker(msg) or self._utterance_speaker
+                self._eq.put_nowait(TranscriptEvent(text=combined, is_final=False, speaker=speaker))
 
         @self._client.on(ServerMessageType.ADD_TRANSCRIPT)
         def on_final(msg):
