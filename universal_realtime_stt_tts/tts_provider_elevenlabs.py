@@ -14,6 +14,7 @@ class ElevenLabsTtsConfig:
     model: str = "eleven_turbo_v2_5"
     stability: float = 0.4
     speed: float = 0.9
+    base_url: str | None = None
 
 
 class ElevenLabsTtsProvider:
@@ -23,7 +24,7 @@ class ElevenLabsTtsProvider:
     async def synthesize(self, text: str, language: str) -> AsyncIterator[bytes]:
         from elevenlabs import ElevenLabs, VoiceSettings
 
-        client = ElevenLabs(api_key=self._config.api_key)
+        client = ElevenLabs(api_key=self._config.api_key, base_url=self._config.base_url)
         audio_stream = client.text_to_speech.convert(
             text=text,
             voice_id=self._config.voice_id,

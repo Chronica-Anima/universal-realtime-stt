@@ -29,6 +29,7 @@ class ElevenLabsSttConfig:
     vad_threshold: float = STT_VAD_THRESHOLD
     min_silence_duration_ms: int = STT_MIN_SILENCE_DURATION_MS
     min_speech_duration_ms: int = STT_MIN_SPEECH_DURATION_MS
+    base_url: str | None = None
 
 
 class ElevenLabsSttProvider:
@@ -45,7 +46,7 @@ class ElevenLabsSttProvider:
             CommitStrategy, RealtimeEvents,
         )
 
-        self._client = ElevenLabs(api_key=self._cfg.api_key)
+        self._client = ElevenLabs(api_key=self._cfg.api_key, base_url=self._cfg.base_url)
         self._connection = await self._client.speech_to_text.realtime.connect(
             RealtimeAudioOptions(
                 model_id=self._cfg.model,
