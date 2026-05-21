@@ -112,15 +112,16 @@ class SpeechmaticsSttProvider:
         results = msg.get("results", [])
         if not results:
             return None
-        speakers = [
+        raw_speakers = [
             w.get("alternatives", [{}])[0].get("speaker")
             for w in results if w.get("alternatives")
         ]
-        speakers = [s for s in speakers if s and s != "UU"]
-        if not speakers:
-            return None
-        # Majority vote: most frequent speaker label
-        return max(set(speakers), key=speakers.count)
+        known = [s for s in raw_speakers if s and s != "UU"]
+        if known:
+            return max(set(known), key=known.count)
+        if any(s == "UU" for s in raw_speakers):
+            return "??"
+        return None
 
     async def send_audio(self, pcm_chunk: bytes) -> None:
         if self._eq.error:

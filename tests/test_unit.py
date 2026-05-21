@@ -387,14 +387,14 @@ class TestSpeechmaticsExtractSpeaker(unittest.TestCase):
         }
         self.assertEqual(p._extract_speaker(msg), "S1")
 
-    def test_all_uu_returns_none(self) -> None:
+    def test_all_uu_returns_unknown_sentinel(self) -> None:
         p = self._make_provider()
         msg = {
             "results": [
                 {"alternatives": [{"speaker": "UU"}]},
             ]
         }
-        self.assertIsNone(p._extract_speaker(msg))
+        self.assertEqual(p._extract_speaker(msg), "??")
 
     def test_no_results_returns_none(self) -> None:
         p = self._make_provider()

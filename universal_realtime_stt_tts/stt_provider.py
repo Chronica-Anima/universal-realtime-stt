@@ -83,6 +83,7 @@ class TranscriptEvent:
         text: The transcribed text for this event.
         is_final: True if this is a committed (final) transcript segment.
             False for partial/interim results that may still change.
+        speaker: Raw diarization label from the provider (e.g. "S1", "S2", "??").
     """
     text: str
     is_final: bool
