@@ -132,9 +132,9 @@ class SpeechmaticsSttProvider:
     async def end_audio(self) -> None:
         if self._client:
             try:
-                await self._client.end_session()
+                await self._client.stop_session()
             except Exception as e:
-                logger.warning("[STT] Speechmatics: end_session error: %s", e)
+                logger.warning("[STT] Speechmatics: stop_session error: %s", e)
                 self._eq.put_sentinel()
 
     def events(self) -> AsyncIterator[TranscriptEvent]:
