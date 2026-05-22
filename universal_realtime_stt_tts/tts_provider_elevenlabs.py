@@ -16,6 +16,7 @@ class ElevenLabsTtsConfig:
     model: str = "eleven_turbo_v2_5"
     stability: float = 0.4
     speed: float = 0.9
+    similarity_boost: float = 0.75
     output_format: str = f"pcm_{AUDIO_SAMPLE_RATE}"
     base_url: str | None = None
 
@@ -37,6 +38,7 @@ class ElevenLabsTtsProvider:
             voice_settings=VoiceSettings(
                 stability=self._config.stability,
                 speed=self._config.speed,
+                similarity_boost=self._config.similarity_boost,
             ),
         )
         for chunk in audio_stream:
