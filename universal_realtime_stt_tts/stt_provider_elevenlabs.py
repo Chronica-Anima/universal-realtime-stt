@@ -25,6 +25,7 @@ class ElevenLabsSttConfig:
     model: str = "scribe_v2_realtime"
     language: str = STT_LANGUAGE_ISO_639_1
     sample_rate: int = AUDIO_SAMPLE_RATE
+    audio_format_name: str = f"pcm_{AUDIO_SAMPLE_RATE}"
     vad_silence_threshold_s: float = STT_VAD_SILENCE_THRESHOLD_S
     vad_threshold: float = STT_VAD_THRESHOLD
     min_silence_duration_ms: int = STT_MIN_SILENCE_DURATION_MS
@@ -50,7 +51,7 @@ class ElevenLabsSttProvider:
         self._connection = await self._client.speech_to_text.realtime.connect(
             RealtimeAudioOptions(
                 model_id=self._cfg.model,
-                audio_format=AudioFormat.PCM_16000,
+                audio_format=AudioFormat(self._cfg.audio_format_name),
                 sample_rate=self._cfg.sample_rate,
                 commit_strategy=CommitStrategy.VAD,
                 language_code=self._cfg.language,

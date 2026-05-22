@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import AsyncIterator
 
+from universal_realtime_stt_tts.config import AUDIO_SAMPLE_RATE
+
 logger = getLogger(__name__)
 
 
@@ -14,6 +16,7 @@ class ElevenLabsTtsConfig:
     model: str = "eleven_turbo_v2_5"
     stability: float = 0.4
     speed: float = 0.9
+    output_format: str = f"pcm_{AUDIO_SAMPLE_RATE}"
     base_url: str | None = None
 
 
@@ -29,7 +32,7 @@ class ElevenLabsTtsProvider:
             text=text,
             voice_id=self._config.voice_id,
             model_id=self._config.model,
-            output_format="pcm_16000",
+            output_format=self._config.output_format,
             language_code=language,
             voice_settings=VoiceSettings(
                 stability=self._config.stability,
