@@ -31,9 +31,11 @@ Usage
 -----
     source .venv/bin/activate
     python benchmark.py
+    python benchmark.py --providers Speechmatics,Deepgram
 """
 from __future__ import annotations
 
+import argparse
 import asyncio
 import signal
 import sys
@@ -287,7 +289,19 @@ def write_tsv(results: list[BenchmarkResult], ts: str) -> Path | None:
 # Main
 # ---------------------------------------------------------------------------
 
-async def main() -> None:
+def select_specs(specs: list[ProviderSpec], requested_names: list[str]) -> list[ProviderSpec]:
+    """Filter built specs down to the requested provider names (case-insensitive)."""
+    available = {spec.name.lower(): spec for spec in specs}
+    unknown = [name for name in requested_names if name.lower() not in available]
+    if unknown:
+        raise SystemExit(
+            f"Unknown provider(s): {', '.join(unknown)}. "
+            f"Available: {', '.join(spec.name for spec in specs)}"
+        )
+    return [available[name.lower()] for name in requested_names]
+
+
+async def main(requested_names: list[str] | None = None) -> None:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # SIGTERM cancels this task so the finally block can flush results
@@ -298,6 +312,9 @@ async def main() -> None:
     if not specs:
         logger.error("No providers configured. Set API keys in .env and retry.")
         sys.exit(1)
+
+    if requested_names:
+        specs = select_specs(specs, requested_names)
 
     pairs = list(get_test_files(ASSETS_DIR))
     if not pairs:
@@ -387,8 +404,16 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Run the STT provider benchmark.")
+    parser.add_argument(
+        "--providers",
+        help="Comma-separated provider names to run (default: all configured).",
+    )
+    args = parser.parse_args()
+    selected = [name.strip() for name in args.providers.split(",") if name.strip()] if args.providers else None
+
     try:
-        asyncio.run(main())
+        asyncio.run(main(selected))
     except KeyboardInterrupt:
         logger.info("Interrupted by user.")
         sys.exit(130)
