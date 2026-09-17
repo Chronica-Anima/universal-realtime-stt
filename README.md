@@ -151,8 +151,11 @@ config = SpeechmaticsSttConfig(
     language="en",
     operating_point="enhanced",
     diarization="speaker",
+    base_url="wss://us.rt.speechmatics.com/v2",  # regional endpoint; omit for the SDK default
 )
 ```
+
+`base_url` pins the Speechmatics realtime region (`eu`, `us`, `au`, or `global`). When it is `None`, the `speechmatics-rt` SDK picks the endpoint itself: `SPEECHMATICS_RT_URL` if set, otherwise its EU default.
 
 ## Implementing a new provider
 

@@ -358,6 +358,32 @@ class TestSttEventQueue(unittest.IsolatedAsyncioTestCase):
                 pass
 
 
+class TestSpeechmaticsEndpoint(unittest.IsolatedAsyncioTestCase):
+    """The configured base_url must reach the SDK client; the SDK resolves None itself."""
+
+    async def _enter_with(self, **cfg_kwargs):
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from universal_realtime_stt_tts.stt_provider_speechmatics import (
+            SpeechmaticsSttProvider, SpeechmaticsSttConfig,
+        )
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.on = MagicMock(return_value=lambda handler: handler)
+        client.start_session = AsyncMock()
+        with patch("speechmatics.rt.AsyncClient", return_value=client) as client_cls:
+            await SpeechmaticsSttProvider(
+                SpeechmaticsSttConfig(api_key="fake-key", **cfg_kwargs),
+            ).__aenter__()
+        return client_cls.call_args.kwargs["url"]
+
+    async def test_explicit_base_url_is_passed_to_sdk(self) -> None:
+        url = await self._enter_with(base_url="wss://us.rt.speechmatics.com/v2")
+        self.assertEqual(url, "wss://us.rt.speechmatics.com/v2")
+
+    async def test_unset_base_url_defers_to_sdk(self) -> None:
+        self.assertIsNone(await self._enter_with())
+
+
 class TestSpeechmaticsExtractSpeaker(unittest.TestCase):
     def _make_provider(self):
         from universal_realtime_stt_tts.stt_provider_speechmatics import (

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Speechmatics regional endpoint**: `SpeechmaticsSttConfig.base_url` is passed to the SDK client, so it selects the realtime region. Its default is `None`, which defers to the SDK (`SPEECHMATICS_RT_URL`, then the SDK's EU host).
+
 ## [0.2.0] - 2026-05-08
 
 ### Added

@@ -15,7 +15,9 @@ logger = getLogger(__name__)
 @dataclass(frozen=True)
 class SpeechmaticsSttConfig:
     api_key: str
-    base_url: str = "wss://eu.rt.speechmatics.com/v2/"
+    # Regional realtime endpoint, e.g. "wss://us.rt.speechmatics.com/v2". None lets
+    # the SDK choose: SPEECHMATICS_RT_URL if set, otherwise its EU default.
+    base_url: str | None = None
     language: str = STT_LANGUAGE_ISO_639_1
     operating_point: str = "enhanced"
     max_delay_s: float = STT_VAD_SILENCE_THRESHOLD_S
@@ -40,7 +42,9 @@ class SpeechmaticsSttProvider:
             SpeakerDiarizationConfig, StaticKeyAuth, OperatingPoint,
         )
 
-        self._client = AsyncClient(auth=StaticKeyAuth(api_key=self._cfg.api_key))
+        self._client = AsyncClient(
+            auth=StaticKeyAuth(api_key=self._cfg.api_key), url=self._cfg.base_url,
+        )
         await self._client.__aenter__()
 
         @self._client.on(ServerMessageType.ADD_PARTIAL_TRANSCRIPT)
