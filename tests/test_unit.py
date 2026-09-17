@@ -383,6 +383,14 @@ class TestSpeechmaticsEndpoint(unittest.IsolatedAsyncioTestCase):
     async def test_unset_base_url_defers_to_sdk(self) -> None:
         self.assertIsNone(await self._enter_with())
 
+    async def test_session_start_logs_the_endpoint(self) -> None:
+        with self.assertLogs("universal_realtime_stt_tts.stt_provider_speechmatics", level="INFO") as logs:
+            await self._enter_with(base_url="wss://us.rt.speechmatics.com/v2")
+        self.assertTrue(
+            any("started against wss://us.rt.speechmatics.com/v2" in line for line in logs.output),
+            logs.output,
+        )
+
 
 class TestSpeechmaticsExtractSpeaker(unittest.TestCase):
     def _make_provider(self):

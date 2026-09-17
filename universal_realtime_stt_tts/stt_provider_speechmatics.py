@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass
 from logging import getLogger
 from typing import AsyncIterator
@@ -98,7 +99,10 @@ class SpeechmaticsSttProvider:
             ),
         )
 
-        logger.info("[STT] Speechmatics: SDK session started.")
+        # The SDK resolves the endpoint in this order and keeps the result private, so
+        # the log mirrors its choice. Which region answers is otherwise invisible.
+        endpoint = self._cfg.base_url or os.getenv("SPEECHMATICS_RT_URL") or "the SDK's EU default"
+        logger.info("[STT] Speechmatics: SDK session started against %s.", endpoint)
         return self
 
     def _flush_utterance(self) -> None:
