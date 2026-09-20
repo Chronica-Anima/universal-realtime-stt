@@ -14,7 +14,7 @@ google-genai>=1.64.0
 # Cartesia — direct WebSocket, no SDK needed
 #
 # ElevenLabs
-elevenlabs>=2.0.0
+elevenlabs>=2.68.0
 #
 # Google
 google-cloud-speech>=2.36.0

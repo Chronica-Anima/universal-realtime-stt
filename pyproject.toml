@@ -33,7 +33,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-elevenlabs = ["elevenlabs>=2.0.0"]
+elevenlabs = ["elevenlabs>=2.68.0"]
 speechmatics = ["speechmatics-rt>=1.0.0"]
 google = ["google-cloud-speech>=2.36.0"]
 gemini = ["google-genai>=1.64.0"]
