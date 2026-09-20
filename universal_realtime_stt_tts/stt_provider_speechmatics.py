@@ -22,6 +22,9 @@ class SpeechmaticsSttConfig:
     language: str = STT_LANGUAGE_ISO_639_1
     operating_point: str = "enhanced"
     max_delay_s: float = STT_VAD_SILENCE_THRESHOLD_S
+    # "fixed" or "flexible". None lets the server apply its own default, which is
+    # "flexible": with enable_entities on, it may run past max_delay to finish an entity.
+    max_delay_mode: str | None = None
     sample_rate: int = AUDIO_SAMPLE_RATE
     diarization: str = "speaker"  # "speaker" | "channel" | "none"
     speaker_diarization_config: dict | None = None
@@ -85,6 +88,7 @@ class SpeechmaticsSttProvider:
                 language=self._cfg.language,
                 enable_partials=True,
                 max_delay=self._cfg.max_delay_s,
+                max_delay_mode=self._cfg.max_delay_mode,
                 operating_point=OperatingPoint(self._cfg.operating_point),
                 enable_entities=True,
                 diarization=self._cfg.diarization if self._cfg.diarization != "none" else None,

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+import unittest.mock
 from typing import AsyncIterator
 
 from universal_realtime_stt_tts._event_queue import SttEventQueue
@@ -168,6 +169,7 @@ class TestSttSessionTask(unittest.IsolatedAsyncioTestCase):
 
     async def test_silence_keepalive_sent_on_timeout(self) -> None:
         """When audio_queue is idle, silence bytes are sent to the provider."""
+        from universal_realtime_stt_tts import stt as stt_module
         from universal_realtime_stt_tts.stt import stt_session_task
 
         delay_event = asyncio.Event()
@@ -193,10 +195,12 @@ class TestSttSessionTask(unittest.IsolatedAsyncioTestCase):
             delay_event.set()
 
         asyncio.create_task(stop_after_delay())
-        await stt_session_task(provider, audio_q, transcript_q, running)
+        # The shipped backstop is 5 s, deliberately long so pacing jitter never
+        # interleaves silence with real audio, and too long to wait out in a unit test.
+        with unittest.mock.patch.object(stt_module, "_AUDIO_IDLE_KEEPALIVE_S", 0.1):
+            await stt_session_task(provider, audio_q, transcript_q, running)
 
-        silence = b"\x00\x00" * 1600
-        silence_chunks = [c for c in provider.sent_chunks if c == silence]
+        silence_chunks = [c for c in provider.sent_chunks if c == stt_module._SILENCE_CHUNK]
         self.assertGreater(len(silence_chunks), 0, "Expected at least one silence keepalive")
 
 
@@ -262,6 +266,86 @@ class TestProtocolCompliance(unittest.TestCase):
     def test_mock_tts_satisfies_protocol(self) -> None:
         provider = MockTtsProvider([b"\x00"])
         self.assertIsInstance(provider, RealtimeTtsProvider)
+
+
+# ---------------------------------------------------------------------------
+# ElevenLabs TTS provider (fake async SDK client)
+# ---------------------------------------------------------------------------
+
+class FakeTextToSpeechClient:
+    """Stands in for AsyncElevenLabs().text_to_speech, recording the stream() arguments."""
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self._chunks = chunks
+        self.stream_calls: list[dict] = []
+
+    def stream(self, **arguments) -> AsyncIterator[bytes]:
+        self.stream_calls.append(arguments)
+        chunks = self._chunks
+
+        async def _aiter():
+            for chunk in chunks:
+                yield chunk
+        return _aiter()
+
+
+class TestElevenLabsTtsStreaming(unittest.IsolatedAsyncioTestCase):
+    CHUNKS = [b"\x01\x02", b"", b"\x03\x04"]
+
+    def setUp(self) -> None:
+        from universal_realtime_stt_tts import tts_provider_elevenlabs
+
+        self.provider_module = tts_provider_elevenlabs
+        self.provider_module._shared_clients.clear()
+        self.addCleanup(self.provider_module._shared_clients.clear)
+
+        self.text_to_speech = FakeTextToSpeechClient(self.CHUNKS)
+        self.constructed_clients = 0
+
+        def _make_client(**_kwargs):
+            self.constructed_clients += 1
+            fake_client = unittest.mock.MagicMock()
+            fake_client.text_to_speech = self.text_to_speech
+            return fake_client
+
+        patcher = unittest.mock.patch("elevenlabs.AsyncElevenLabs", side_effect=_make_client)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _make_provider(self, model: str):
+        return self.provider_module.ElevenLabsTtsProvider(
+            self.provider_module.ElevenLabsTtsConfig(api_key="fake-key", model=model),
+        )
+
+    async def _collect(self, model: str) -> list[bytes]:
+        provider = self._make_provider(model)
+        return [chunk async for chunk in provider.synthesize("Dobrý den.", language="cs")]
+
+    async def test_yields_chunks_and_skips_empty(self) -> None:
+        collected = await self._collect("eleven_v3_conversational")
+        self.assertEqual(collected, [b"\x01\x02", b"\x03\x04"])
+
+    async def test_stream_arguments_reach_the_sdk(self) -> None:
+        await self._collect("eleven_v3_conversational")
+        arguments = self.text_to_speech.stream_calls[0]
+        self.assertEqual(arguments["text"], "Dobrý den.")
+        self.assertEqual(arguments["language_code"], "cs")
+        self.assertEqual(arguments["model_id"], "eleven_v3_conversational")
+        self.assertEqual(arguments["voice_id"], "MpbYQvoTmXjHkaxtLiSh")
+
+    async def test_latency_level_sent_for_multilingual(self) -> None:
+        await self._collect("eleven_multilingual_v2")
+        self.assertEqual(self.text_to_speech.stream_calls[0]["optimize_streaming_latency"], 3)
+
+    async def test_latency_level_omitted_for_other_models(self) -> None:
+        await self._collect("eleven_v3_conversational")
+        self.assertNotIn("optimize_streaming_latency", self.text_to_speech.stream_calls[0])
+
+    async def test_client_reused_across_calls(self) -> None:
+        await self._collect("eleven_v3_conversational")
+        await self._collect("eleven_v3_conversational")
+        self.assertEqual(len(self.text_to_speech.stream_calls), 2)
+        self.assertEqual(self.constructed_clients, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -361,7 +445,7 @@ class TestSttEventQueue(unittest.IsolatedAsyncioTestCase):
 class TestSpeechmaticsEndpoint(unittest.IsolatedAsyncioTestCase):
     """The configured base_url must reach the SDK client; the SDK resolves None itself."""
 
-    async def _enter_with(self, **cfg_kwargs):
+    async def _enter(self, **cfg_kwargs):
         from unittest.mock import AsyncMock, MagicMock, patch
         from universal_realtime_stt_tts.stt_provider_speechmatics import (
             SpeechmaticsSttProvider, SpeechmaticsSttConfig,
@@ -374,7 +458,24 @@ class TestSpeechmaticsEndpoint(unittest.IsolatedAsyncioTestCase):
             await SpeechmaticsSttProvider(
                 SpeechmaticsSttConfig(api_key="fake-key", **cfg_kwargs),
             ).__aenter__()
+        return client_cls, client
+
+    async def _enter_with(self, **cfg_kwargs):
+        client_cls, _client = await self._enter(**cfg_kwargs)
         return client_cls.call_args.kwargs["url"]
+
+    async def _transcription_config(self, **cfg_kwargs):
+        _client_cls, client = await self._enter(**cfg_kwargs)
+        return client.start_session.call_args.kwargs["transcription_config"]
+
+    async def test_max_delay_settings_reach_the_transcription_config(self) -> None:
+        """Both are deliberately off the defaults, so a swapped mapping fails here."""
+        config = await self._transcription_config(max_delay_s=1.4, max_delay_mode="fixed")
+        self.assertEqual(config.max_delay, 1.4)
+        self.assertEqual(config.max_delay_mode, "fixed")
+
+    async def test_unset_max_delay_mode_defers_to_server(self) -> None:
+        self.assertIsNone((await self._transcription_config()).max_delay_mode)
 
     async def test_explicit_base_url_is_passed_to_sdk(self) -> None:
         url = await self._enter_with(base_url="wss://us.rt.speechmatics.com/v2")
@@ -452,7 +553,9 @@ class TestSpeechmaticsExtractSpeaker(unittest.TestCase):
 
     def test_flush_utterance_joins_segments(self) -> None:
         p = self._make_provider()
-        p._utterance_buf.extend(["hello", "world"])
+        # A Speechmatics segment carries its own leading space, so the buffer is
+        # concatenated and stripped rather than joined on a separator.
+        p._utterance_buf.extend(["hello", " world"])
         p._flush_utterance()
         ev = p._eq.get_nowait()
         self.assertEqual(ev.text, "hello world")

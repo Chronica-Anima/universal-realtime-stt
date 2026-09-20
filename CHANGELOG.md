@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-19
+
+### Added
+
+- **`optimize_streaming_latency=3` on `eleven_multilingual_*`**: measured through the provider on a 313-character Czech reply, first byte lands at 0.876 s with the level against 3.76 s without. The parameter is omitted for every other model, since `eleven_v3_conversational` rejects it with HTTP 400 `unsupported_model` and on the fast models the gain is too small to spend a deprecated parameter on (turbo 0.390 s to 0.296 s, flash 0.192 s to 0.183 s).
+- **`SpeechmaticsSttConfig.max_delay_mode`**: reaches `TranscriptionConfig.max_delay_mode`. Its default is `None`, which leaves the server on `flexible`, where `enable_entities` may push a final transcript past `max_delay`. `"fixed"` holds the delay instead.
+- **`tests/test_tts.py`**: one live synthesis per ElevenLabs model, asserting a plausible duration, audio rather than silence, and that a 50 ms ticker alongside it never misses a beat by more than 100 ms.
+
+### Changed
+
+- **ElevenLabs TTS is fully async**: `synthesize()` uses `AsyncElevenLabs` and the `/stream` endpoint consumed with `async for`, in place of the synchronous client and the `convert` endpoint. The event loop is no longer held for the duration of a synthesis, and first byte arrives earlier on long replies.
+- **One client per credential and loop**: the `AsyncElevenLabs` instance is cached at module level by `(api_key, base_url, running loop)`, so a provider built per utterance no longer pays a TLS handshake each time, and no pool outlives the loop that opened it.
+
 ### Fixed
 
 - **Speechmatics regional endpoint**: `SpeechmaticsSttConfig.base_url` is passed to the SDK client, so it selects the realtime region. Its default is `None`, which defers to the SDK (`SPEECHMATICS_RT_URL`, then the SDK's EU host).

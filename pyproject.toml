@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "universal-realtime-stt-tts"
-version = "0.2.0"
+version = "0.3.0"
 description = "Multiprovider realtime speech-to-text and text-to-speech library with unified async interface"
 authors = [
   { name = "Tomáš Kubeš" }

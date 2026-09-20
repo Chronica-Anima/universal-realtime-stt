@@ -126,6 +126,10 @@ async def main():
 asyncio.run(main())
 ```
 
+`synthesize()` calls the ElevenLabs `/stream` endpoint through `AsyncElevenLabs`, so nothing blocks the event loop while audio is generated. The client is cached at module level per `(api_key, base_url, running loop)`, so building a provider per utterance still reuses one connection pool, and a pool never outlives the loop that opened it.
+
+On the `eleven_multilingual_*` models the provider adds `optimize_streaming_latency=3`. Measured through this provider on a 313-character Czech reply, first byte lands at 0.876 s with the level against 3.76 s without it. The vendor marks the parameter deprecated, but the API honours it. It is omitted for every other model: `eleven_v3_conversational` rejects it with HTTP 400 `unsupported_model`, and on the fast models the gain is too small to spend a deprecated parameter on (turbo 0.390 s to 0.296 s, flash 0.192 s to 0.183 s).
+
 ## How it works
 
 `stt_session_task()` runs two concurrent tasks for the duration of a session:
@@ -187,7 +191,7 @@ Lower is better, same convention as WER and CER. Enable it by setting `GEMINI_AP
 The repository (not the published wheel) ships additional tooling for evaluating providers:
 
 - `benchmark.py` runs every configured provider in parallel against a directory of WAV/TXT pairs and writes a TSV report plus per-run HTML diffs.
-- `tests/test_stt.py` contains end-to-end smoke tests for each provider; `tests/test_unit.py` covers the core protocol and orchestration with mocks (no API keys required).
+- `tests/test_stt.py` contains end-to-end smoke tests for each provider; `tests/test_tts.py` synthesises one Czech sentence per ElevenLabs model and asserts the event loop stays responsive; `tests/test_unit.py` covers the core protocol and orchestration with mocks (no API keys required).
 - `tests/test_diff.py` exercises the diff report and LLM metric.
 
 ```bash
