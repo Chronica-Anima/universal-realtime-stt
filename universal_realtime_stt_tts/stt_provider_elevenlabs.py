@@ -7,6 +7,7 @@ from typing import AsyncIterator
 
 from universal_realtime_stt_tts.config import (
     AUDIO_SAMPLE_RATE,
+    STT_INPUT_VOLUME_THRESHOLD,
     STT_LANGUAGE_ISO_639_1,
     STT_MIN_SILENCE_DURATION_MS,
     STT_MIN_SPEECH_DURATION_MS,
@@ -31,10 +32,13 @@ class ElevenLabsSttConfig:
     min_silence_duration_ms: int = STT_MIN_SILENCE_DURATION_MS
     min_speech_duration_ms: int = STT_MIN_SPEECH_DURATION_MS
     base_url: str | None = None
+    input_volume_threshold: float | None = STT_INPUT_VOLUME_THRESHOLD  # no ElevenLabs equivalent; ignored
 
 
 class ElevenLabsSttProvider:
     def __init__(self, cfg: ElevenLabsSttConfig) -> None:
+        if cfg.input_volume_threshold is not None:
+            logger.debug("[STT] ElevenLabs: input_volume_threshold has no equivalent; ignored.")
         self._cfg = cfg
         self._eq = SttEventQueue(logger)
         self._client = None

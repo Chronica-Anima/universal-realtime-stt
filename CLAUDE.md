@@ -101,6 +101,7 @@ ffmpeg -i input.mp3 -ac 1 -ar 16000 -c:a pcm_s16le output.wav
 - Language: `cs` (ISO 639-1) / `cs-CZ` (BCP-47, used by Google)
 - Audio: 16kHz sample rate, mono, 16-bit PCM (`pcm_s16le`)
 - Streaming: 200ms chunks, 1.0x realtime factor, 2s final silence padding
+- Input loudness gate: `STT_INPUT_VOLUME_THRESHOLD` (default `None`, off), the `input_volume_threshold` field on every STT config; Speechmatics maps it to `audio_filtering_config.volume_threshold` (absolute 0-100 RMS level per 10 ms chunk, so the right value depends on input gain), other providers log and ignore it
 
 ## Design Principles
 

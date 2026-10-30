@@ -7,7 +7,7 @@ from typing import AsyncIterator, Optional
 
 from google.cloud import speech
 
-from universal_realtime_stt_tts.config import AUDIO_SAMPLE_RATE, STT_LANGUAGE_BCP_47
+from universal_realtime_stt_tts.config import AUDIO_SAMPLE_RATE, STT_INPUT_VOLUME_THRESHOLD, STT_LANGUAGE_BCP_47
 from universal_realtime_stt_tts._event_queue import SttEventQueue
 from universal_realtime_stt_tts.stt_provider import RealtimeSttProvider, TranscriptEvent
 
@@ -31,6 +31,7 @@ class GoogleSttConfig:
     interim_results: bool = True
     language: str = STT_LANGUAGE_BCP_47
     sample_rate: int = AUDIO_SAMPLE_RATE
+    input_volume_threshold: float | None = STT_INPUT_VOLUME_THRESHOLD  # no Google equivalent; ignored
 
 
 class GoogleRealtimeProvider(RealtimeSttProvider):
@@ -46,6 +47,8 @@ class GoogleRealtimeProvider(RealtimeSttProvider):
 
     def __init__(self, cfg: Optional[GoogleSttConfig] = None) -> None:
         self._cfg = cfg or GoogleSttConfig()
+        if self._cfg.input_volume_threshold is not None:
+            logger.debug("[STT] Google: input_volume_threshold has no equivalent; ignored.")
         self._audio_q: asyncio.Queue[Optional[bytes]] = asyncio.Queue(maxsize=400)
         self._eq = SttEventQueue(logger)
         self._closed = asyncio.Event()

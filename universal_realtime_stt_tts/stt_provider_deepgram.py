@@ -9,7 +9,9 @@ from urllib.parse import urlencode
 
 from websockets import connect, ConnectionClosed
 
-from universal_realtime_stt_tts.config import AUDIO_CHANNELS, AUDIO_SAMPLE_RATE, STT_LANGUAGE_ISO_639_1, STT_VAD_SILENCE_THRESHOLD_S
+from universal_realtime_stt_tts.config import (
+    AUDIO_CHANNELS, AUDIO_SAMPLE_RATE, STT_INPUT_VOLUME_THRESHOLD, STT_LANGUAGE_ISO_639_1, STT_VAD_SILENCE_THRESHOLD_S,
+)
 from universal_realtime_stt_tts._event_queue import SttEventQueue
 from universal_realtime_stt_tts.stt_provider import RealtimeSttProvider, TranscriptEvent
 
@@ -29,10 +31,13 @@ class DeepgramSttConfig:
     sample_rate: int = AUDIO_SAMPLE_RATE
     channels: int = AUDIO_CHANNELS
     endpointing_ms: int = int(STT_VAD_SILENCE_THRESHOLD_S * 1000)
+    input_volume_threshold: float | None = STT_INPUT_VOLUME_THRESHOLD  # no Deepgram equivalent; ignored
 
 
 class DeepgramRealtimeProvider(RealtimeSttProvider):
     def __init__(self, cfg: DeepgramSttConfig) -> None:
+        if cfg.input_volume_threshold is not None:
+            logger.debug("[STT] Deepgram: input_volume_threshold has no equivalent; ignored.")
         self._cfg = cfg
         self._ws = None
         self._eq = SttEventQueue(logger)

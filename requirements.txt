@@ -20,4 +20,4 @@ elevenlabs>=2.68.0
 google-cloud-speech>=2.36.0
 #
 # Speechmatics
-speechmatics-rt>=1.0.0
+speechmatics-rt>=1.2.2

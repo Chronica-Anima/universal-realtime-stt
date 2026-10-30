@@ -6,7 +6,9 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import AsyncIterator
 
-from universal_realtime_stt_tts.config import AUDIO_SAMPLE_RATE, STT_LANGUAGE_ISO_639_1, STT_VAD_SILENCE_THRESHOLD_S
+from universal_realtime_stt_tts.config import (
+    AUDIO_SAMPLE_RATE, STT_INPUT_VOLUME_THRESHOLD, STT_LANGUAGE_ISO_639_1, STT_VAD_SILENCE_THRESHOLD_S,
+)
 from universal_realtime_stt_tts._event_queue import SttEventQueue
 from universal_realtime_stt_tts.stt_provider import TranscriptEvent
 
@@ -29,6 +31,8 @@ class SpeechmaticsSttConfig:
     diarization: str = "speaker"  # "speaker" | "channel" | "none"
     speaker_diarization_config: dict | None = None
     end_of_utterance_silence_trigger: float = STT_VAD_SILENCE_THRESHOLD_S
+    # audio_filtering_config.volume_threshold, absolute 0-100 RMS level per 10 ms chunk (see config.py).
+    input_volume_threshold: float | None = STT_INPUT_VOLUME_THRESHOLD
 
 
 class SpeechmaticsSttProvider:
@@ -95,6 +99,10 @@ class SpeechmaticsSttProvider:
                 speaker_diarization_config=diarization_cfg,
                 conversation_config=ConversationConfig(
                     end_of_utterance_silence_trigger=self._cfg.end_of_utterance_silence_trigger,
+                ),
+                audio_filtering_config=(
+                    None if self._cfg.input_volume_threshold is None
+                    else {"volume_threshold": self._cfg.input_volume_threshold}
                 ),
             ),
             audio_format=AudioFormat(

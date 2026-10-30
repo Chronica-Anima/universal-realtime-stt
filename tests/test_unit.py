@@ -477,6 +477,21 @@ class TestSpeechmaticsEndpoint(unittest.IsolatedAsyncioTestCase):
     async def test_unset_max_delay_mode_defers_to_server(self) -> None:
         self.assertIsNone((await self._transcription_config()).max_delay_mode)
 
+    async def test_input_volume_threshold_becomes_audio_filtering_config(self) -> None:
+        config = await self._transcription_config(input_volume_threshold=3.4)
+        self.assertEqual(config.audio_filtering_config, {"volume_threshold": 3.4})
+        self.assertEqual(config.to_dict()["audio_filtering_config"], {"volume_threshold": 3.4})
+
+    async def test_zero_input_volume_threshold_is_sent_not_dropped(self) -> None:
+        """0 sends the gate with nothing filtered, so it must not read as unset."""
+        config = await self._transcription_config(input_volume_threshold=0)
+        self.assertEqual(config.audio_filtering_config, {"volume_threshold": 0})
+
+    async def test_unset_input_volume_threshold_sends_no_audio_filtering(self) -> None:
+        config = await self._transcription_config()
+        self.assertIsNone(config.audio_filtering_config)
+        self.assertNotIn("audio_filtering_config", config.to_dict())
+
     async def test_explicit_base_url_is_passed_to_sdk(self) -> None:
         url = await self._enter_with(base_url="wss://us.rt.speechmatics.com/v2")
         self.assertEqual(url, "wss://us.rt.speechmatics.com/v2")

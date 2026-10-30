@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import AsyncIterator, Optional
 
-from universal_realtime_stt_tts.config import AUDIO_SAMPLE_RATE
+from universal_realtime_stt_tts.config import AUDIO_SAMPLE_RATE, STT_INPUT_VOLUME_THRESHOLD
 from universal_realtime_stt_tts._event_queue import SttEventQueue
 from universal_realtime_stt_tts.stt_provider import TranscriptEvent
 
@@ -71,6 +71,7 @@ class GeminiLiveSttConfig:
     api_key: str
     model: str = "gemini-3.1-flash-live-preview"
     sample_rate: int = AUDIO_SAMPLE_RATE
+    input_volume_threshold: float | None = STT_INPUT_VOLUME_THRESHOLD  # no Gemini Live equivalent; ignored
 
     # System instruction for the model's generated responses (not for transcription).
     # Transcription comes from the native input_audio_transcription path.
@@ -102,6 +103,8 @@ class GeminiLiveProvider:
     """
 
     def __init__(self, cfg: GeminiLiveSttConfig) -> None:
+        if cfg.input_volume_threshold is not None:
+            logger.debug("[STT] Gemini Live: input_volume_threshold has no equivalent; ignored.")
         self._cfg = cfg
         self._session = None
         self._exit_stack: Optional[AsyncExitStack] = None
