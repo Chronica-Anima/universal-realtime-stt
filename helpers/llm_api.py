@@ -33,15 +33,12 @@ class LLMBasicClient:
     - Parsing and returning as dict
     """
 
-    def __init__(
-            self, api_key: str, model_id: str, max_tokens: int = 0, temperature: float = 0.2,
-            api_version: str = "v1beta",  # preview models are served on v1beta only; google-genai 3.x defaults to v1
-    ):
+    def __init__(self, api_key: str, model_id: str, max_tokens: int = 0, temperature: float = 0.2):
         if not api_key:
             raise RuntimeError("GEMINI_API_KEY is not set")
 
         self.model_id = model_id
-        self.client = genai.Client(api_key=api_key, http_options=types.HttpOptions(api_version=api_version))
+        self.client = genai.Client(api_key=api_key)
         self.max_tokens = max_tokens
         self.temperature = temperature
 

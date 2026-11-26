@@ -1,17 +1,17 @@
 """
-Tests for helpers/report_summary.py: run parsing, file-set derivation and averaging.
+Tests for helpers/report_summary.py: run parsing, the meaningful-file rule and averaging.
 
     pytest tests/test_report_summary.py -v
 """
 from __future__ import annotations
 
+import contextlib
+import io
 import unittest
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
 from helpers.report_summary import (
-    RunSpec, derive_file_set, format_table, load_scores, main, parse_run_spec, read_file_set, summarize,
-    write_file_set,
+    RunSpec, format_table, load_scores, main, meaningful_files, parse_run_spec, summarize,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "report-summary"
@@ -49,12 +49,16 @@ class TestReportSummary(unittest.TestCase):
         self.assertIsNone(self.alpha["borderline.wav"].semantic_error_rate)
         self.assertEqual(self.alpha["clear.wav"].semantic_error_rate, 5.0)
 
-    def test_file_set_keeps_files_some_provider_understood(self) -> None:
+    def test_meaningful_files_are_those_some_provider_understood(self) -> None:
         """murky.wav is best at 85% WER; borderline.wav is exactly at the cutoff and stays."""
         self.assertEqual(
-            derive_file_set([self.alpha, self.beta, self.gamma], word_error_rate_cutoff=50),
+            meaningful_files([self.alpha, self.beta, self.gamma], word_error_rate_cutoff=50),
             ["borderline.wav", "clear.wav"],
         )
+
+    def test_lower_cutoff_drops_borderline_file(self) -> None:
+        self.assertEqual(meaningful_files([self.alpha, self.beta, self.gamma], word_error_rate_cutoff=40),
+                         ["clear.wav"])
 
     def test_averages_cover_only_the_file_set(self) -> None:
         summary = summarize("Alpha", self.alpha, ["borderline.wav", "clear.wav"])
@@ -76,18 +80,11 @@ class TestReportSummary(unittest.TestCase):
         self.assertEqual(table.splitlines()[2], "| Alpha | 40.0 | 20.0 | 5.0 | 2 | 1 |")
         self.assertEqual(table.splitlines()[3], "| Beta | 45.0 | 22.5 | 22.5 | 2 | 2 |")
 
-    def test_file_set_round_trips_with_its_header(self) -> None:
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / "report-files.txt"
-            runs = [RunSpec("Alpha", TWO_PROVIDERS_RUN, "Alpha")]
-            write_file_set(path, ["borderline.wav", "clear.wav"], 50, runs)
-            self.assertIn("# Listed when at least one provider reached a word error rate of 50% or lower.",
-                          path.read_text(encoding="utf-8"))
-            self.assertEqual(read_file_set(path), ["borderline.wav", "clear.wav"])
-
-    def test_cli_derives_then_summarizes(self) -> None:
-        with TemporaryDirectory() as directory:
-            file_set_path = Path(directory) / "report-files.txt"
+    def test_cli_derives_the_set_and_prints_the_table(self) -> None:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
             main([f"Alpha={TWO_PROVIDERS_RUN}", f"Beta={TWO_PROVIDERS_RUN}", f"Gamma later={PARTIAL_RUN}:Gamma",
-                  "--file-set", str(file_set_path), "--derive", "50"])
-            self.assertEqual(read_file_set(file_set_path), ["borderline.wav", "clear.wav"])
+                  "--cutoff", "50"])
+        lines = output.getvalue().splitlines()
+        self.assertEqual(lines[0], "2 meaningful files (best WER <= 50%)")
+        self.assertIn("| Gamma later | 8.0 | 4.0 | 2.0 | 1 | 1 |", lines)

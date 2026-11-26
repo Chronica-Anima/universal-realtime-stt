@@ -696,9 +696,3 @@ class TestGeminiApiVersion(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(_ClientConstructed):
                 await GeminiLiveProvider(GeminiLiveSttConfig(api_key="fake-key", api_version="v1")).__aenter__()
         self.assertEqual(client_class.call_args.kwargs["http_options"].api_version, "v1")
-
-    def test_semantic_metric_client_uses_v1beta(self) -> None:
-        from helpers.llm_api import LLMBasicClient
-        with unittest.mock.patch("helpers.llm_api.genai.Client") as client_class:
-            LLMBasicClient(api_key="fake-key", model_id="gemini-3.1-pro-preview")
-        self.assertEqual(client_class.call_args.kwargs["http_options"].api_version, "v1beta")

@@ -1,14 +1,14 @@
 """
 Average benchmark TSVs into the per-provider table published in doc/report.md.
 
-Only the assets listed in the report file set count. The set holds every asset
-on which at least one provider reached a word error rate at or below a cutoff:
-a recording nobody transcribes reasonably says nothing about the providers.
+Only meaningful assets count: those on which at least one of the given runs reached
+a word error rate at or below the cutoff (default 40%). A recording nobody transcribes
+reasonably says nothing about the providers. The set is derived from the runs on every
+call, so the same runs and cutoff always give the same table.
 
-Each run is given as LABEL=PATH[:PROVIDER], where PROVIDER is the provider column
-in the TSV and defaults to LABEL. Run from the repository root:
+Each run is given as LABEL=PATH[:PROVIDER], where PROVIDER is the provider column in
+the TSV and defaults to LABEL. Run from the repository root:
 
-    python -m helpers.report_summary --derive 50 "Cartesia=out/v2/20260504_094311_benchmark.tsv" ...
     python -m helpers.report_summary "Cartesia=out/v2/20260504_094311_benchmark.tsv" ...
 """
 from __future__ import annotations
@@ -19,7 +19,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_FILE_SET_PATH = Path("doc/report-files.txt")
+DEFAULT_WORD_ERROR_RATE_CUTOFF = 40.0
 
 
 @dataclass(frozen=True)
@@ -74,29 +74,14 @@ def load_scores(run: RunSpec) -> dict[str, FileScores]:
     return scores
 
 
-def derive_file_set(score_tables: list[dict[str, FileScores]], word_error_rate_cutoff: float) -> list[str]:
-    """Files on which the best provider reached a word error rate at or below the cutoff."""
+def meaningful_files(score_tables: list[dict[str, FileScores]], word_error_rate_cutoff: float) -> list[str]:
+    """Files on which the best run reached a word error rate at or below the cutoff."""
     best_word_error_rate: dict[str, float] = {}
     for scores in score_tables:
         for file_name, file_scores in scores.items():
             previous_best = best_word_error_rate.get(file_name, float("inf"))
             best_word_error_rate[file_name] = min(previous_best, file_scores.word_error_rate)
     return sorted(name for name, rate in best_word_error_rate.items() if rate <= word_error_rate_cutoff)
-
-
-def write_file_set(path: Path, file_names: list[str], word_error_rate_cutoff: float, runs: list[RunSpec]) -> None:
-    header = [
-        "# Assets counted in the published report averages.",
-        f"# Listed when at least one provider reached a word error rate of {word_error_rate_cutoff:g}% or lower.",
-        "# Written by helpers/report_summary.py --derive from these runs:",
-        *(f"#   {run.label} = {run.path.as_posix()} ({run.provider})" for run in runs),
-    ]
-    path.write_text("\n".join(header + file_names) + "\n", encoding="utf-8")
-
-
-def read_file_set(path: Path) -> list[str]:
-    lines = (line.strip() for line in path.read_text(encoding="utf-8").splitlines())
-    return [line for line in lines if line and not line.startswith("#")]
 
 
 def _mean(values: list[float]) -> float | None:
@@ -106,7 +91,7 @@ def _mean(values: list[float]) -> float | None:
 def summarize(label: str, scores: dict[str, FileScores], file_set: list[str]) -> ProviderSummary:
     counted = [scores[name] for name in file_set if name in scores]
     if not counted:
-        raise ValueError(f"{label} has no scores for any file in the file set")
+        raise ValueError(f"{label} has no scores for any meaningful file")
     semantic_rates = [entry.semantic_error_rate for entry in counted if entry.semantic_error_rate is not None]
     return ProviderSummary(
         label=label,
@@ -133,24 +118,20 @@ def format_table(summaries: list[ProviderSummary]) -> str:
 def main(arguments: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("runs", nargs="+", help="LABEL=PATH[:PROVIDER]")
-    parser.add_argument("--file-set", type=Path, default=DEFAULT_FILE_SET_PATH)
-    parser.add_argument("--derive", type=float, metavar="WER_CUTOFF",
-                        help="Rewrite the file set from these runs before summarizing.")
+    parser.add_argument("--cutoff", type=float, default=DEFAULT_WORD_ERROR_RATE_CUTOFF,
+                        help="Best WER a file needs from at least one run to count (default: %(default)s).")
     options = parser.parse_args(arguments)
 
     runs = [parse_run_spec(text) for text in options.runs]
     score_tables = [load_scores(run) for run in runs]
+    file_set = meaningful_files(score_tables, options.cutoff)
 
-    if options.derive is not None:
-        write_file_set(options.file_set, derive_file_set(score_tables, options.derive), options.derive, runs)
-
-    file_set = read_file_set(options.file_set)
     summaries = [summarize(run.label, scores, file_set) for run, scores in zip(runs, score_tables)]
     for summary in summaries:
         if summary.missing_files:
             print(f"WARNING: {summary.label} has no score for {', '.join(summary.missing_files)}", file=sys.stderr)
 
-    print(f"{len(file_set)} files from {options.file_set}\n")
+    print(f"{len(file_set)} meaningful files (best WER <= {options.cutoff:g}%)\n")
     print(format_table(summaries))
     return 0
 
