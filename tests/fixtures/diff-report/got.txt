@@ -1,0 +1,3 @@
+Dobrý den vítejte v naší přednášce o umělé inteligenci.
+Dnes budeme hovořit o tom, jak se strojové učení využívá praxi.
+Začneme základními pojmy a postupně přejdeme k pokročilejším tématům.

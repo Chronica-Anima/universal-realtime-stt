@@ -7,30 +7,29 @@ name = "universal-realtime-stt-tts"
 version = "0.3.0"
 description = "Multiprovider realtime speech-to-text and text-to-speech library with unified async interface"
 authors = [
-  { name = "Tomáš Kubeš" }
+    { name = "Tomáš Kubeš" }
 ]
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
 keywords = ["speech-to-text", "text-to-speech", "stt", "tts", "realtime", "websocket", "asr", "transcription"]
 classifiers = [
-  "Development Status :: 3 - Alpha",
-  "Intended Audience :: Developers",
-  "License :: OSI Approved :: MIT License",
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
-  "Programming Language :: Python :: 3.11",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: 3.14",
-  "Topic :: Multimedia :: Sound/Audio :: Speech",
-  "Topic :: Software Development :: Libraries :: Python Modules",
-  "Framework :: AsyncIO",
-  "Typing :: Typed",
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Framework :: AsyncIO",
+    "Typing :: Typed",
 ]
 dependencies = [
-  "websockets>=16.0.0",
-  "python-dotenv>=1.2.1",
+    "websockets>=16.0.0",
 ]
 
 [project.optional-dependencies]
@@ -38,15 +37,17 @@ elevenlabs = ["elevenlabs>=2.80.0"]
 speechmatics = ["speechmatics-rt>=1.3.0"]
 google = ["google-cloud-speech>=2.41.0"]
 gemini = ["google-genai>=3.6.1"]
-benchmark = ["diff-match-patch>=20241021"]
-semantic = ["google-genai>=3.6.1"]
-dev = ["pytest"]
+benchmark = ["diff-match-patch>=20241021", "python-dotenv>=1.2.1"]
+dev = ["pytest", "python-dotenv>=1.2.1"]
 all = [
-  "universal-realtime-stt-tts[elevenlabs,speechmatics,google,gemini,benchmark]",
+    "universal-realtime-stt-tts[elevenlabs,speechmatics,google,gemini,benchmark]",
 ]
 
 [tool.setuptools.packages.find]
 include = ["universal_realtime_stt_tts*"]
+
+[tool.setuptools.package-data]
+universal_realtime_stt_tts = ["py.typed"]
 
 [project.urls]
 Homepage = "https://github.com/Chronica-Anima/universal-realtime-stt-tts"

@@ -1,49 +1,41 @@
 """
-Gemini Live STT Provider — real-time transcription via Gemini Live API.
+Gemini Live STT provider: real-time transcription via the Gemini Live API.
 
 Uses the google-genai SDK's bidirectional streaming Live API over WebSocket.
-Audio is sent as raw 200ms PCM chunks; the server-side Automatic Activity
-Detection (AAD) handles utterance segmentation — no client-side VAD is needed.
+Audio goes out as raw PCM chunks; the server-side Automatic Activity Detection
+segments utterances, so no client-side VAD is needed.
 
 Transcription source
 --------------------
 Transcription comes from the native ``input_audio_transcription`` path, not
-from the model's generated audio response. This is configured by setting
-``input_audio_transcription: {}`` in the session setup. The server then sends
-``LiveServerContent.input_transcription`` events (type ``Transcription``) with:
+from the model's generated response. With ``input_audio_transcription: {}`` in
+the session setup the server sends ``LiveServerContent.input_transcription``
+events (type ``Transcription``) with:
 
   - ``text``: transcribed text for this utterance chunk
   - ``finished``: True = final (committed), False = interim/partial
 
-These map directly to TranscriptEvent(is_final=...). Input language is
-auto-detected from the audio — there is no per-session language config for
-input (``speech_config.language_code`` is for voice name/output only).
+These map to TranscriptEvent(is_final=...). Input language is auto-detected
+from the audio; there is no per-session language config for input
+(``speech_config.language_code`` is for voice name/output only).
 
-Response modality MUST be AUDIO
----------------------------------
+Response modality must be AUDIO
+-------------------------------
 ``gemini-3.1-flash-live-preview`` only supports ``response_modalities=["AUDIO"]``.
-Setting ``["TEXT"]`` causes WebSocket 1011 at connection time. The model
-audio output is received and discarded — we only consume the
-``input_transcription`` sidecar events for STT purposes.
+Setting ``["TEXT"]`` causes WebSocket 1011 at connection time. The model's
+audio output is received and discarded; only the ``input_transcription``
+sidecar events are used.
 
-Architecture
-------------
-Unlike the other WebSocket providers which manage the raw WebSocket protocol
-themselves, this provider uses the google-genai SDK's Live API client.
-The SDK handles the WebSocket framing and message serialisation, which is
-non-trivial for the Gemini bidirectional protocol.
-
-Lifecycle:
+Lifecycle
+---------
   1. __aenter__: opens a Live API session via AsyncExitStack
   2. send_audio(): forwards each PCM chunk via send_realtime_input()
   3. end_audio(): sends audio_stream_end, waits briefly for the server to
      flush the final transcription, then signals close
-  4. events(): async iterator yielding TranscriptEvent per input_transcription
-     event (is_final mirrors Transcription.finished)
-  5. __aexit__: cancels receiver, closes session (idempotent via exit_stack)
+  4. events(): yields a TranscriptEvent per input_transcription event
+  5. __aexit__: cancels the receiver and closes the session
 
-Requires: google-genai>=1.0.0  (pip install google-genai)
-API key:  GEMINI_API_KEY in .env
+Requires the ``gemini`` extra (google-genai>=3.6.1) and GEMINI_API_KEY.
 """
 from __future__ import annotations
 
@@ -73,40 +65,20 @@ class GeminiLiveSttConfig:
     # Preview models are served on v1beta only; google-genai 3.x defaults to v1.
     api_version: str = "v1beta"
     sample_rate: int = AUDIO_SAMPLE_RATE
-    input_volume_threshold: float | None = STT_INPUT_VOLUME_THRESHOLD  # no Gemini Live equivalent; ignored
+    # Not mapped for Gemini Live yet; whether it has an equivalent is untested.
+    input_volume_threshold: float | None = STT_INPUT_VOLUME_THRESHOLD
 
-    # System instruction for the model's generated responses (not for transcription).
-    # Transcription comes from the native input_audio_transcription path.
-    # Input language is auto-detected from the audio; there is no per-session
-    # language config for input in the Live API (speech_config.language_code
-    # is for TTS output only).
+    # Steers the model's discarded audio reply only; transcription comes from
+    # the input_audio_transcription path and is not affected.
     system_instruction: str = _SYSTEM_INSTRUCTION
 
 
 class GeminiLiveProvider:
-    """
-    Real-time STT via the Gemini Live API (google-genai SDK).
-
-    Protocol:
-      - Opens a Live API session (bidirectional WebSocket, managed by SDK).
-      - Sends 200ms raw PCM chunks as realtime audio input.
-      - Server-side AAD handles utterance segmentation; no client VAD needed.
-      - Reads server_content.input_transcription events for transcription:
-          finished=False → TranscriptEvent(is_final=False)  (interim)
-          finished=True  → TranscriptEvent(is_final=True)   (committed)
-      - Model text responses (model_turn) are not used for transcription.
-      - Audio output suppressed via response_modalities=["TEXT"].
-
-    Usage is identical to every other provider — pass an instance to
-    stt_session_task() via the RealtimeSttProvider protocol.
-
-    Requires google-genai>=1.0.0:
-        pip install google-genai
-    """
+    """Real-time STT via the Gemini Live API; see the module docstring."""
 
     def __init__(self, cfg: GeminiLiveSttConfig) -> None:
         if cfg.input_volume_threshold is not None:
-            logger.debug("[STT] Gemini Live: input_volume_threshold has no equivalent; ignored.")
+            logger.debug("[STT] Gemini Live: input_volume_threshold is not mapped for this provider yet; ignored.")
         self._cfg = cfg
         self._session = None
         self._exit_stack: Optional[AsyncExitStack] = None
@@ -115,23 +87,16 @@ class GeminiLiveProvider:
         self._closed = asyncio.Event()
 
     async def __aenter__(self) -> "GeminiLiveProvider":
-        try:
-            from google import genai  # noqa: PLC0415
-        except ImportError as exc:
-            raise ImportError(
-                "google-genai is required for GeminiLiveProvider. "
-                "Install it with: pip install google-genai"
-            ) from exc
+        from google import genai  # noqa: PLC0415
 
         client = genai.Client(
             api_key=self._cfg.api_key,
             http_options=genai.types.HttpOptions(api_version=self._cfg.api_version),
         )
 
-        # IMPORTANT: response_modalities MUST be ["AUDIO"] — not ["TEXT"].
-        # gemini-3.1-flash-live-preview only supports AUDIO output.
-        # We don't use the model's audio output — input_audio_transcription gives us
-        # a text sidecar of the user's speech independently of the audio response.
+        # response_modalities must be ["AUDIO"]: the preview model rejects ["TEXT"]
+        # with 1011. The audio reply is discarded; input_audio_transcription is
+        # the text sidecar of the user's speech.
         live_config = {
             "response_modalities": ["AUDIO"],
             "system_instruction": self._cfg.system_instruction,
@@ -200,7 +165,7 @@ class GeminiLiveProvider:
 
     async def _recv_loop(self) -> None:
         """
-        Gemini Live quirk — pending interim promotion:
+        Gemini Live quirk, pending interim promotion:
         When audio_stream_end is sent, the server returns the final transcript
         with finished=False and then closes (1000 OK) without sending finished=True.
         We hold the most recent interim and promote it to final if the session

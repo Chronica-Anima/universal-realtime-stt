@@ -1,114 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+from logging import getLogger
 from pathlib import Path
-from typing import Awaitable, Callable, Optional
+from typing import Awaitable, Callable
 
 from helpers.diff_report import CustomMetricResult, DiffReport
-from helpers.stream_wav import stream_wav_file, QueueFullError, logger
+from helpers.stream_wav import QueueFullError, stream_wav_file
 from helpers.transcript_ingest import transcript_ingest_task
 from universal_realtime_stt_tts.stt import stt_session_task
 from universal_realtime_stt_tts.stt_provider import RealtimeSttProvider
 
-
-async def transcribe_wav_realtime(
-        provider: RealtimeSttProvider,
-        wav_path: Path,
-        *,
-        chunk_ms: int = 200,
-        sample_rate: int = 16_000,
-        realtime_factor: float = 1.0,
-        silence_s: float = 2.0,
-) -> str:
-    """
-    Transcribe a WAV file using the given STT provider.
-
-    Sets up the full streaming pipeline (audio queue, transcript queue,
-    sender/receiver tasks), streams audio with real-time pacing, collects
-    committed transcripts, and returns the joined result.
-
-    This is a single-session wrapper — it is not designed for session
-    respawn. If the provider drops the connection mid-stream the exception
-    propagates to the caller (see error handling below).
-
-    Normal flow:
-        1. stream_wav_file feeds PCM chunks into audio_queue, then pushes
-           None to signal end-of-audio.
-        2. stt_session_task's sender forwards chunks to the provider; on
-           receiving None it calls end_audio().
-        3. The provider commits its final results and closes; the receiver
-           drains events, pushes None into transcript_queue, and exits.
-        4. transcript_ingest_task collects all segments and returns them.
-
-    Error flow (provider drops connection early):
-        1. stt_session_task raises the provider's exception and cancels its
-           internal sender.
-        2. A done-callback on stt_task clears the `running` flag, which
-           stops stream_wav_file's audio chunk loop on its next iteration.
-           If the queue fills before that fires, stream_wav_file raises
-           QueueFullError (swallowed here — the real error is in stt_task).
-        3. After stream_wav_file exits, stt_task is awaited and its exception
-           re-raised. Before re-raising, a None sentinel is placed in
-           transcript_queue to unblock and cleanly shut down ingest_task.
-        4. The provider exception propagates to the caller.
-
-    Args:
-        provider: An already-instantiated (but not yet entered) RealtimeSttProvider.
-        wav_path: Path to the WAV file (must be PCM 16kHz mono 16-bit).
-        chunk_ms: Audio chunk duration in milliseconds.
-        sample_rate: Expected sample rate in Hz.
-        realtime_factor: Playback speed (1.0 = real-time, 0.0 = no delay).
-        silence_s: Silence padding (seconds) added before and after audio for VAD.
-
-    Returns:
-        The full transcript as a single string (segments joined by space).
-
-    Raises:
-        Any exception raised by stt_session_task (e.g. provider connection
-        errors). QueueFullError from the audio stream is suppressed when
-        it is a symptom of an STT failure.
-    """
-    input_audio_queue: asyncio.Queue = asyncio.Queue(maxsize=40)
-    output_transcript_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
-    running = asyncio.Event()
-    running.set()
-
-    stt_task = asyncio.create_task(stt_session_task(provider, input_audio_queue, output_transcript_queue, running))
-    ingest_task = asyncio.create_task(transcript_ingest_task(running, output_transcript_queue))
-
-    # When STT exits early due to a provider error, clear `running` so the wav
-    # chunk loop stops on its next iteration instead of filling the queue.
-    stt_task.add_done_callback(
-        lambda t: running.clear() if not t.cancelled() and t.exception() else None
-    )
-
-    try:
-        await stream_wav_file(
-            wav_path,
-            input_audio_queue,
-            chunk_ms,
-            sample_rate,
-            realtime_factor=realtime_factor,
-            silence=silence_s,
-            running=running,
-        )
-    except QueueFullError:
-        pass  # STT exited early and cancelled its sender; queue backed up. Real error is in stt_task.
-
-    # Wait for STT to finish; propagate any provider error.
-    try:
-        await stt_task
-    except Exception:
-        # _receiver raised without putting None in transcript_queue — signal ingest to stop.
-        await output_transcript_queue.put(None)
-        await ingest_task
-        raise
-
-    # Similarly wait for the ingest loop to exit and collect drained transcripts.
-    segments = await ingest_task
-    running.clear()
-
-    return " ".join(segments)
+logger = getLogger(__name__)
 
 
 async def transcribe_and_diff(
@@ -117,51 +20,65 @@ async def transcribe_and_diff(
         txt_path: Path,
         out_path: Path,
         *,
-        chunk_ms: int = 200,
-        sample_rate: int = 16_000,
-        realtime_factor: float = 1.0,
-        silence_s: float = 2.0,
-        custom_metric_fn: Optional[Callable[[str, str], Awaitable[CustomMetricResult]]] = None,
-        provider_name: Optional[str] = None,
+        chunk_ms: int,
+        sample_rate: int,
+        realtime_factor: float,
+        silence_s: float,
+        custom_metric_fn: Callable[[str, str], Awaitable[CustomMetricResult]] | None = None,
+        provider_name: str | None = None,
 ) -> DiffReport:
     """
-    Transcribe a WAV file and compare against ground-truth text.
+    Stream a WAV file through one STT session, diff the final transcript against the ground-truth
+    text and write the HTML report to out_path.
 
-    Runs the full pipeline: stream audio to the provider, collect the
-    transcript, read the expected text, generate an HTML diff report,
-    and return the DiffReport with accuracy metrics.
+    Error flow (provider drops connection early):
+        1. stt_session_task raises the provider's exception and cancels its internal sender.
+        2. A done-callback on stt_task clears `running`, which stops stream_wav_file on its next chunk.
+           If the queue fills before that, stream_wav_file raises QueueFullError, swallowed here
+           because the real error is in stt_task.
+        3. stt_task is awaited and its exception re-raised, after a None sentinel unblocks ingest_task.
 
-    Args:
-        provider: An already-instantiated (but not yet entered) RealtimeSttProvider.
-        wav_path: Path to the WAV file (must be PCM 16kHz mono 16-bit).
-        txt_path: Path to the ground-truth transcript text file.
-        out_path: Path where the HTML diff report will be written.
-        chunk_ms: Audio chunk duration in milliseconds.
-        sample_rate: Expected sample rate in Hz.
-        realtime_factor: Playback speed (1.0 = real-time, 0.0 = no delay).
-        silence_s: Silence padding (seconds) added before and after audio for VAD.
-        custom_metric_fn: Optional async callable (expected, got) -> CustomMetricResult.
-            When supplied, the result is embedded in the DiffReport and shown in the
-            HTML report and TSV export. See helpers/semantic_understanding.py for an example.
-        provider_name: Label in the HTML report; defaults to the provider's class name.
-            Pass one when the same class runs with different models.
-
-    Returns:
-        DiffReport with accuracy metrics and paths.
+    custom_metric_fn: optional async (expected, got) -> CustomMetricResult embedded in the report.
+    provider_name: label in the HTML report, defaults to the provider's class name. Pass one when the
+        same class runs with different models.
     """
-    provider_name = provider_name or provider.__class__.__name__
+    audio_queue: asyncio.Queue = asyncio.Queue(maxsize=40)
+    transcript_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
+    running = asyncio.Event()
+    running.set()
 
-    transcript_raw = await transcribe_wav_realtime(
-        provider,
-        wav_path,
-        chunk_ms=chunk_ms,
-        sample_rate=sample_rate,
-        realtime_factor=realtime_factor,
-        silence_s=silence_s,
+    stt_task = asyncio.create_task(stt_session_task(provider, audio_queue, transcript_queue, running))
+    ingest_task = asyncio.create_task(transcript_ingest_task(transcript_queue))
+    stt_task.add_done_callback(
+        lambda task: running.clear() if not task.cancelled() and task.exception() else None
     )
+
+    try:
+        try:
+            await stream_wav_file(wav_path, audio_queue, chunk_ms, sample_rate,
+                                  realtime_factor=realtime_factor, silence_s=silence_s, running=running)
+        except QueueFullError:
+            pass
+
+        try:
+            await stt_task
+        except Exception:
+            # The receiver raised without putting None in transcript_queue.
+            await transcript_queue.put(None)
+            await ingest_task
+            raise
+
+        transcript_raw = " ".join(await ingest_task)
+    finally:
+        # On cancellation (the benchmark's timeout), an orphaned session would keep streaming
+        # and holding a billed provider connection while the retry opens another.
+        child_tasks = [task for task in (stt_task, ingest_task) if not task.done()]
+        for task in child_tasks:
+            task.cancel()
+        await asyncio.gather(*child_tasks, return_exceptions=True)
+    running.clear()
     logger.info("Final transcript raw: %r", transcript_raw)
 
-    # read ground truth and compute diff
     expected_raw = txt_path.read_text(encoding="utf-8")
 
     custom_metric = None
@@ -171,7 +88,7 @@ async def transcribe_and_diff(
         except Exception as exc:
             logger.warning("Custom metric failed, skipping: %s", exc)
 
-    # Build the repot and write it.
+    provider_name = provider_name or provider.__class__.__name__
     report = DiffReport(expected_raw, transcript_raw, custom_metric=custom_metric)
     report.write_html(
         out_path,

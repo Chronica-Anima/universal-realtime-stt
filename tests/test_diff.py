@@ -1,171 +1,110 @@
 """
-Tests for diff report generation and TSV export.
+Tests for diff report generation and the benchmark TSV, on sample Czech text with no STT
+provider or audio involved.
 
-Exercises DiffReport, HTML output, and benchmark TSV writing
-with sample text — no STT providers or audio files needed.
-
-    pytest tests/test_diff.py -v
+    pytest tests/test_diff.py -v -k "not llm"    # the llm test calls Gemini and is billed
 """
 from __future__ import annotations
 
 import asyncio
+import csv
 import unittest
+import unittest.mock
 from os import getenv
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from dotenv import load_dotenv
 
-from helpers.diff_report import DiffReport
-from pytest_config import OUT_PATH
+from helpers.diff_report import CustomMetricResult, DiffReport
+from helpers.report_summary import FileScores, RunSpec, load_scores
 
+FIXTURES = Path(__file__).parent / "fixtures" / "diff-report"
 
-# Czech sample texts — expected is ground truth, got simulates STT output with typical errors.
-EXPECTED = (
-    "Dobrý den, vítejte v naší přednášce o umělé inteligenci. "
-    "Dnes budeme hovořit o tom, jak se strojové učení využívá v praxi. "
-    "Začneme základními pojmy a postupně přejdeme k pokročilejším tématům."
-)
-
-GOT = (
-    "Dobrý den vítejte v naší přednášce o umělé inteligenci. "
-    "Dnes budeme hovořit o tom, jak se strojové učení využívá praxi. "
-    "Začneme základními pojmy a postupně přejdeme k pokročilejším tématům."
-)
+# EXPECTED is the ground truth; GOT drops one comma and the word "v", as STT output often does.
+EXPECTED = (FIXTURES / "expected.txt").read_text(encoding="utf-8")
+GOT = (FIXTURES / "got.txt").read_text(encoding="utf-8")
 
 
 class TestDiffReport(unittest.TestCase):
 
-    def setUp(self) -> None:
-        self._tmpdir = TemporaryDirectory()
-        self.tmp = Path(self._tmpdir.name)
+    def test_metrics_ignore_punctuation_and_count_the_dropped_word(self) -> None:
+        self.assertEqual(DiffReport(EXPECTED, GOT).to_metrics_dict(), {
+            "char_levenshtein": "2",
+            "chars_expected": "187",
+            "words_expected": "30",
+            "chars_got": "185",
+            "words_got": "29",
+            "chars_matched": "185",
+            "chars_inserted": "0",
+            "chars_deleted": "2",
+            "word_levenshtein": "1",
+            "character_error_rate": "1.1",
+            "word_error_rate": "3.3",
+            "match_percentage": "98.9",
+        })
 
-    def tearDown(self) -> None:
-        self._tmpdir.cleanup()
+    def test_write_html_renders_title_and_error_rates(self) -> None:
+        with TemporaryDirectory() as directory:
+            html_path = DiffReport(EXPECTED, GOT).write_html(
+                Path(directory) / "sample.diff.html", title="lecture intro", detail="unit test",
+            )
+            html = html_path.read_text(encoding="utf-8")
 
-    def test_metrics_from_construction(self) -> None:
-        """All metrics are computed automatically from just the two texts."""
-        report = DiffReport(EXPECTED, GOT)
+        self.assertIn("<h1>lecture intro: 3.3% WER / 1.1% CER</h1>", html)
+        self.assertIn('<div class="stat-value">3.3%</div>', html)
+        self.assertIn('<div class="stat-value">1.1%</div>', html)
+        self.assertIn("<div class='hint'>unit test</div>", html)
 
-        # Sanity: got is close to expected, so error rates should be low but nonzero
-        self.assertGreater(report.word_error_rate, 0)
-        self.assertLess(report.word_error_rate, 20)
-        self.assertGreater(report.character_error_rate, 0)
-        self.assertLess(report.character_error_rate, 20)
+    def test_write_tsv_output_reads_back_through_load_scores(self) -> None:
+        """The custom_metric column comes from a later report, so the first report's row leaves it blank."""
+        import benchmark
+        from benchmark import BenchmarkResult
 
-        # Word counts should be reasonable
-        self.assertGreater(report.words_expected, 10)
-        self.assertGreater(report.words_got, 10)
+        results = [
+            BenchmarkResult("Alpha", "lecture.wav", DiffReport(EXPECTED, GOT), Path("alpha.diff.html"), None),
+            BenchmarkResult("Beta", "lecture.wav",
+                            DiffReport(EXPECTED, GOT, CustomMetricResult(12.5, "one fact missing")),
+                            Path("beta.diff.html"), None),
+            BenchmarkResult("Gamma", "lecture.wav", None, None, "connection timeout"),
+        ]
+        with TemporaryDirectory() as directory, unittest.mock.patch.object(benchmark, "OUT_PATH", Path(directory)):
+            tsv_path = benchmark.write_tsv(results, "20260101_000000")
+            self.assertEqual(sorted(path.name for path in Path(directory).iterdir()), ["20260101_000000_benchmark.tsv"])
 
-    def test_write_html(self) -> None:
-        """write_html creates an HTML file with WER and CER stats."""
-        report = DiffReport(EXPECTED, GOT)
-        html_path = report.write_html(self.tmp / "test.diff.html", title="test sample", detail="Unit test")
+            self.assertEqual(load_scores(RunSpec("Alpha", tsv_path, "Alpha")),
+                             {"lecture.wav": FileScores(3.3, 1.1, None)})
+            self.assertEqual(load_scores(RunSpec("Beta", tsv_path, "Beta")),
+                             {"lecture.wav": FileScores(3.3, 1.1, 12.5)})
+            with self.assertRaisesRegex(ValueError, "No scored rows for provider 'Gamma'"):
+                load_scores(RunSpec("Gamma", tsv_path, "Gamma"))
 
-        self.assertTrue(html_path.exists())
-        html = html_path.read_text(encoding="utf-8")
-        self.assertIn("WER", html)
-        self.assertIn("CER", html)
+            with tsv_path.open(encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle, delimiter="\t"))
 
-    def test_to_html_without_file(self) -> None:
-        """to_html returns HTML string without writing to disk."""
-        report = DiffReport(EXPECTED, GOT)
-        html = report.to_html(title="inline test", detail="no file")
-
-        self.assertIn("WER", html)
-        self.assertIn("CER", html)
-        self.assertIn("inline test", html)
-
-    def test_to_metrics_dict(self) -> None:
-        """to_metrics_dict() includes all numeric fields and computed properties, excludes str."""
-        report = DiffReport(EXPECTED, GOT)
-        metrics = report.to_metrics_dict()
-
-        # Computed properties present
-        self.assertIn("word_error_rate", metrics)
-        self.assertIn("character_error_rate", metrics)
-        self.assertIn("match_percentage", metrics)
-
-        # Numeric fields present
-        self.assertIn("chars_expected", metrics)
-        self.assertIn("word_levenshtein", metrics)
-
-        # Raw text excluded
-        self.assertNotIn("text_expected", metrics)
-        self.assertNotIn("text_got", metrics)
-
-        # All values are strings (formatted for TSV)
-        for k, v in metrics.items():
-            self.assertIsInstance(v, str, f"metrics[{k!r}] should be str, got {type(v)}")
-
-    def test_tsv_roundtrip(self) -> None:
-        """Benchmark write_tsv produces valid TSV with auto-discovered columns.
-
-        Writes HTML diff reports and TSV to out/ for manual inspection.
-        """
-        from benchmark import BenchmarkResult, write_tsv
-
-        reports = []
-        for i, (exp, got) in enumerate([(EXPECTED, GOT), (GOT, EXPECTED)]):
-            report = DiffReport(exp, got)
-            html_path = report.write_html(OUT_PATH / f"test_diff_{i}.diff.html", title=f"sample {i}", detail="test")
-            reports.append(BenchmarkResult(f"Provider{i}", f"file{i}.wav", report, html_path, None))
-
-        # Add a failed result
-        reports.append(BenchmarkResult("FailedProvider", "fail.wav", None, None, "connection timeout"))
-
-        tsv_path = write_tsv(reports, "test_diff")
-        self.assertTrue(tsv_path.exists())
-
-        lines = tsv_path.read_text(encoding="utf-8").rstrip("\n").split("\n")
-        header = lines[0].split("\t")
-        self.assertEqual(lines[0].count("\t") + 1, len(header))
-
-        # All data rows have same number of columns as header
-        for i, line in enumerate(lines[1:], 1):
-            cols = line.split("\t")
-            self.assertEqual(len(cols), len(header), f"Row {i} has {len(cols)} cols, header has {len(header)}")
-
-        # Structural columns present
-        self.assertEqual(header[0], "provider")
-        self.assertEqual(header[1], "file")
-        self.assertEqual(header[-2], "diff_report")
-        self.assertEqual(header[-1], "error")
-
-        # Metric columns auto-discovered from DiffReport
-        self.assertIn("word_error_rate", header)
-        self.assertIn("character_error_rate", header)
+        self.assertEqual([(row["provider"], row["diff_report"], row["error"]) for row in rows], [
+            ("Alpha", "alpha.diff.html", ""),
+            ("Beta", "beta.diff.html", ""),
+            ("Gamma", "", "connection timeout"),
+        ])
 
     def test_llm_semantic_compare(self) -> None:
-        """Integration test for SemanticUnderstandingAnalyzer.
+        """Calls Gemini, so it needs google-genai and GEMINI_API_KEY, and fails rather than skips without them.
 
-        Requires:
-            - google-genai installed  (pip install google-genai)
-            - GEMINI_API_KEY set in environment or .env
-
-        Both conditions are checked inside the test — if either is missing the test
-        *fails* explicitly (rather than being skipped) to make the requirement visible.
-        Other test classes are not affected.
-
-            pytest tests/test_diff.py::TestLLMUnderstanding -v
+            pytest tests/test_diff.py -v -k llm
         """
         try:
             from helpers.semantic_understanding import SemanticUnderstandingAnalyzer
-        except ImportError as exc:
-            self.fail(f"google-genai not installed — run: pip install google-genai\n{exc}")
+        except ImportError as error:
+            self.fail(f"google-genai not installed, run: pip install google-genai\n{error}")
 
         load_dotenv()
         api_key = getenv("GEMINI_API_KEY")
         if not api_key:
-            self.fail("GEMINI_API_KEY not set — add it to .env to run this test")
+            self.fail("GEMINI_API_KEY not set, add it to .env to run this test")
 
         result = asyncio.run(SemanticUnderstandingAnalyzer(api_key).compare(EXPECTED, GOT))
 
-        self.assertIsInstance(result.score, float)
         self.assertGreaterEqual(result.score, 0.0)
-        self.assertLessEqual(result.score, 100.0)
-        self.assertIsInstance(result.detail, str)
-        self.assertGreater(len(result.detail), 0)
-
-        # GOT differs from EXPECTED only by two minor omissions — SER should be low
-        self.assertLess(result.score, 50.0, "Expected low Semantic Error Rate for near-identical texts")
+        self.assertLess(result.score, 50.0, "GOT only drops a comma and one preposition, so SER should be low")
+        self.assertTrue(result.detail.strip())

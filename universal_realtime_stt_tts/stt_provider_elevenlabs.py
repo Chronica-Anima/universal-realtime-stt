@@ -32,16 +32,16 @@ class ElevenLabsSttConfig:
     min_silence_duration_ms: int = STT_MIN_SILENCE_DURATION_MS
     min_speech_duration_ms: int = STT_MIN_SPEECH_DURATION_MS
     base_url: str | None = None
-    input_volume_threshold: float | None = STT_INPUT_VOLUME_THRESHOLD  # no ElevenLabs equivalent; ignored
+    # Not mapped for ElevenLabs yet; whether it has an equivalent is untested.
+    input_volume_threshold: float | None = STT_INPUT_VOLUME_THRESHOLD
 
 
 class ElevenLabsSttProvider:
     def __init__(self, cfg: ElevenLabsSttConfig) -> None:
         if cfg.input_volume_threshold is not None:
-            logger.debug("[STT] ElevenLabs: input_volume_threshold has no equivalent; ignored.")
+            logger.debug("[STT] ElevenLabs: input_volume_threshold is not mapped for this provider yet; ignored.")
         self._cfg = cfg
         self._eq = SttEventQueue(logger)
-        self._client = None
         self._connection = None
         self._closed = False
 
@@ -51,8 +51,8 @@ class ElevenLabsSttProvider:
             CommitStrategy, RealtimeEvents,
         )
 
-        self._client = ElevenLabs(api_key=self._cfg.api_key, base_url=self._cfg.base_url)
-        self._connection = await self._client.speech_to_text.realtime.connect(
+        client = ElevenLabs(api_key=self._cfg.api_key, base_url=self._cfg.base_url)
+        self._connection = await client.speech_to_text.realtime.connect(
             RealtimeAudioOptions(
                 model_id=self._cfg.model,
                 audio_format=AudioFormat(self._cfg.audio_format_name),
@@ -114,10 +114,9 @@ class ElevenLabsSttProvider:
         return self._eq.events()
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
-        if self._connection and not self._closed:
-            self._closed = True
-            try:
-                await self._connection.close()
-            except Exception:
-                pass
+        try:
+            await self.end_audio()
+        except Exception as error:
+            # The session is over either way; a failed close must not mask the caller's exception.
+            logger.debug("[STT] ElevenLabs: close on exit failed: %s", error)
         self._eq.put_sentinel()

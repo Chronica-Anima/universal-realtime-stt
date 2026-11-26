@@ -1,44 +1,18 @@
-# Contributing to universal-realtime-stt
+# Contributing to universal-realtime-stt-tts
 
-Thank you for your interest in improving realtime-stt.
+Bug reports, new providers and fixes are welcome. Open an issue first for larger changes.
 
-Contributions are entirely optional but very welcome.
+## Before submitting
 
-## Ways to Contribute
+- Run the offline tests: `pytest tests/test_unit.py`. They need no API keys or assets. Never run bare `pytest`: it also runs the live provider tests, which need keys and are billed by each provider.
+- Record user-visible changes under `[Unreleased]` in `CHANGELOG.md` ([Keep a Changelog](https://keepachangelog.com/)).
+- Record architecture decisions as MADR records in `doc/adr/`.
+- Write commit messages as Conventional Commits: `type: description`, lowercase.
 
-- Reporting bugs
-- Adding support for new STT providers
-- Performance and feature improvements
-- Improving test coverage
+## Adding a provider
 
-## Before Submitting Code
-
-Please:
-
-1. Open an issue first to discuss larger changes.
-2. Keep changes focused.
-3. Ensure all tests pass (`pytest`).
-4. Follow the existing architecture and style.
-
-## Provider Implementations
-
-If adding a new provider:
-
-- Follow the `RealtimeSttProvider` protocol.
-- Keep dependencies minimal.
-- Maintain queue-based async architecture.
-
-## Philosophy
-
-This project aims to remain:
-
-- Lightweight
-- Provider-agnostic
-- Dependency-minimal
-
-Please preserve these principles in contributions.
+See [Implementing a new provider](README.md#implementing-a-new-provider) in the README.
 
 ## License
 
-By contributing, you agree that your contributions will be 
-licensed under the MIT License.
+Contributions are licensed under the MIT License.
