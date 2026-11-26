@@ -19,11 +19,13 @@ class SttEventQueue:
     the boilerplate.
     """
 
-    def __init__(self, log: Logger, maxsize: int = 200) -> None:
-        self._q: asyncio.Queue[TranscriptEvent | None] = asyncio.Queue(maxsize=maxsize)
+    def __init__(self, log: Logger) -> None:
+        self._q: asyncio.Queue[TranscriptEvent | None] = asyncio.Queue(maxsize=200)
         self._log = log
         self._error: Exception | None = None
         self._sentinel_sent = False
+        # Strong reference, so the event loop cannot garbage-collect a pending put.
+        self._pending_sentinel: asyncio.Task | None = None
 
     @property
     def error(self) -> Exception | None:
@@ -43,20 +45,28 @@ class SttEventQueue:
         await self._q.put(ev)
 
     def put_sentinel(self) -> None:
+        """Queue the end-of-stream marker once. Call it on the event loop thread."""
         if self._sentinel_sent:
             return
         try:
             self._q.put_nowait(None)
-            self._sentinel_sent = True
         except asyncio.QueueFull:
-            pass
-
-    async def put_sentinel_async(self) -> None:
-        """Awaitable sentinel — for use from coroutines scheduled cross-thread."""
-        if self._sentinel_sent:
-            return
+            # Dropping the sentinel would block events() forever, so wait for the
+            # consumer to make room; every event already queued stays ahead of it.
+            self._pending_sentinel = asyncio.get_running_loop().create_task(self._q.put(None))
         self._sentinel_sent = True
-        await self._q.put(None)
+
+    def finish_from_thread(self, loop: asyncio.AbstractEventLoop, error: Exception | None = None) -> None:
+        """End the stream from a worker thread, optionally with an error.
+
+        asyncio.Queue is not thread-safe, so the work is handed to *loop*.
+        """
+        def finish() -> None:
+            if error is not None:
+                self._error = error
+            self.put_sentinel()
+
+        loop.call_soon_threadsafe(finish)
 
     def events(self) -> AsyncIterator[TranscriptEvent]:
         async def _aiter():
@@ -68,12 +78,6 @@ class SttEventQueue:
                     break
                 yield ev
         return _aiter()
-
-    def get_nowait(self) -> TranscriptEvent | None:
-        return self._q.get_nowait()
-
-    def empty(self) -> bool:
-        return self._q.empty()
 
     @asynccontextmanager
     async def recv_guard(
@@ -88,7 +92,7 @@ class SttEventQueue:
         Handles WebSocket close exceptions, cancellation, and the
         ``closed.set()`` + ``put_sentinel()`` cleanup that every provider
         needs.  Optional *on_close* coroutine runs in the finally block
-        after exception handling but before the sentinel — use it for
+        after exception handling but before the sentinel; use it for
         provider-specific teardown (e.g. Gemini's pending-interim promotion).
         """
         try:

@@ -1,8 +1,8 @@
 # Universal STT Configuration (provider-independent)
 #
 # Central defaults for all providers. Each provider config dataclass imports
-# from here so that changing a value propagates everywhere.  The app can
-# override any value at instantiation time via the factory.
+# from here so that changing a value propagates everywhere. Callers override
+# any value per instance through the provider's config dataclass.
 
 # Language codes
 STT_LANGUAGE_ISO_639_1 = "cs"
@@ -18,12 +18,12 @@ STT_MIN_SPEECH_DURATION_MS = 1000  # milliseconds
 # each 10 ms chunk's RMS amplitude scaled to 0-100; chunks below the threshold
 # become silence before recognition. The level is absolute, so the right value
 # depends on the input's gain. None turns the gate off; 0 sends the gate with
-# nothing filtered. Providers without an equivalent ignore it.
+# nothing filtered. Only Speechmatics maps it so far; the other providers accept
+# it but ignore it, and whether they offer an equivalent is untested.
 # https://docs.speechmatics.com/features/audio-filtering
 STT_INPUT_VOLUME_THRESHOLD: float | None = None
 
 # Audio format
 AUDIO_SAMPLE_RATE = 16000
 AUDIO_CHANNELS = 1
-AUDIO_SAMPLE_WIDTH_BYTES = 2  # 16-bit PCM
 AUDIO_ENCODING = "pcm_s16le"

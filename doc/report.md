@@ -20,7 +20,7 @@ Averages over 87 of the 91 recordings, ordered by WER. Lower is better.
 ## Method
 
 - **Audio:** 91 recordings from [Paměť národa][PN] (Memory of Nations), elderly speakers in home interviews. The list is in the private `assets` repository.
-- **Streaming:** 16 kHz mono PCM in 200 ms chunks at real-time speed, language `cs`, default provider settings.
+- **Streaming:** 16 kHz mono PCM in 200 ms chunks at real-time speed, language `cs`, default provider settings except the Speechmatics `enhanced` run (see Caveats).
 - **Recordings counted:** those on which at least one provider reached 40% WER or better. The other 4 no provider transcribes usefully.
 - **WER, CER:** word and character Levenshtein distance against a human-verified transcript, after lowercasing and removing punctuation.
 - **SER:** share of facts in the reference transcript that are missing from the STT output, judged by `gemini-4-hydrogen`. See [the metric description](semantic_understanding_metric.md).
@@ -28,9 +28,8 @@ Averages over 87 of the 91 recordings, ordered by WER. Lower is better.
 ## Caveats
 
 - Runs are from different dates. Providers tested in May may have improved since.
-- The Speechmatics `enhanced` run used echo suppression.
-- SER scored by `gemini-4-hydrogen`.
+- The Speechmatics `enhanced` run set `input_volume_threshold` to 0.2, sent as Speechmatics `audio_filtering_config.volume_threshold` on its 0-100 scale. See [the threshold sweep](Speechmatics%20Echo%20Fix.md).
 
-`python -m helpers.report_summary` reproduces the table from the run TSVs in `out/`.
+`python -m helpers.report_summary` reproduces the table when given the run TSVs. Benchmark output is not tracked in git, so the TSVs stay with whoever ran the benchmark.
 
 [PN]: https://www.pametnaroda.cz/cs/pribehy-20-stoleti

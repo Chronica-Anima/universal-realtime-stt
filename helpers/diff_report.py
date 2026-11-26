@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, fields
+from html import escape
 from pathlib import Path
-from typing import Optional
 
 from diff_match_patch import diff_match_patch
 
@@ -11,7 +11,7 @@ from diff_match_patch import diff_match_patch
 class CustomMetricResult:
     """Return type for any custom metric function supplied to DiffReport.
 
-    score:  numeric score 0–100 (lower = worse, like WER/CER)
+    score:  error rate in percent, 0 to 100 (lower is better, like WER/CER)
     detail: human-readable explanation for text contexts (logging, TSV)
 
     Override to_html() in subclasses for a richer HTML representation.
@@ -26,11 +26,11 @@ class CustomMetricResult:
             '<h2>Custom Metric</h2>'
             '<div class="stats"><div class="stat">'
             f'<div class="stat-label">Score</div>'
-            f'<div class="stat-value">{_escape_html(f"{self.score:.1f}%")}</div>'
+            f'<div class="stat-value">{self.score:.1f}%</div>'
             '</div></div>'
             '<details style="margin-top:12px">'
             '<summary style="cursor:pointer;font-size:13px;color:#555">Detail</summary>'
-            f'<pre style="margin-top:8px">{_escape_html(self.detail)}</pre>'
+            f'<pre style="margin-top:8px">{escape(self.detail)}</pre>'
             '</details>'
             '</div>'
         )
@@ -65,18 +65,16 @@ _PUNCTUATION_NORMALIZE = str.maketrans({
 _PUNCTUATION_REMOVE = str.maketrans('', '', '.,!?;:"\'-')
 
 
-def normalize_text_for_diff(s: str, remove_punctuation: bool = True) -> str:
+def normalize_text_for_diff(text: str) -> str:
     """
     Normalize text for comparison:
     - unify whitespace (converts all whitespaces to single space),
     - convert to lowercase (as case is really hard for stt),
     - normalize punctuation variants (curly quotes, dashes, etc.) to ASCII equivalents,
-    - optionally remove common punctuation entirely (default: True).
+    - remove common punctuation entirely.
     """
-    s = s.translate(_PUNCTUATION_NORMALIZE)
-    if remove_punctuation:
-        s = s.translate(_PUNCTUATION_REMOVE)
-    return " ".join(s.strip().split()).lower()
+    text = text.translate(_PUNCTUATION_NORMALIZE).translate(_PUNCTUATION_REMOVE)
+    return " ".join(text.split()).lower()
 
 
 def _word_levenshtein(ref: list[str], hyp: list[str]) -> int:
@@ -94,18 +92,6 @@ def _word_levenshtein(ref: list[str], hyp: list[str]) -> int:
     return dp[m]
 
 
-def _escape_html(s: Optional[str]) -> str:
-    if s is None:
-        return ""
-    return (
-        s.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-        .replace("'", "&#39;")
-    )
-
-
 @dataclass(frozen=True)
 class DiffReport:
     """Diff report comparing expected (ground truth) text against STT output.
@@ -118,6 +104,7 @@ class DiffReport:
     custom_metric: CustomMetricResult | None = field(default=None)
 
     # --- computed in __post_init__ (init=False) ---
+    diffs: list[tuple[int, str]] = field(init=False, repr=False, compare=False)
     char_levenshtein: int = field(init=False, repr=False)
     chars_expected: int = field(init=False, repr=False)
     words_expected: int = field(init=False, repr=False)
@@ -141,6 +128,7 @@ class DiffReport:
 
         # object.__setattr__ is the standard pattern for frozen dataclass __post_init__
         _set = object.__setattr__
+        _set(self, 'diffs', diffs)
         _set(self, 'char_levenshtein', dmp.diff_levenshtein(diffs))
         _set(self, 'chars_expected', len(expected_norm))
         _set(self, 'words_expected', len(expected_words))
@@ -176,7 +164,7 @@ class DiffReport:
         """Export all numeric fields and computed properties as an ordered dict of formatted strings.
 
         Skips str fields (raw texts). Includes @property computed metrics.
-        Column order follows declaration order — add new fields/properties and they appear automatically.
+        Column order follows declaration order, so new fields and properties appear automatically.
         """
         d: dict[str, str] = {}
         for f in fields(self):
@@ -194,19 +182,13 @@ class DiffReport:
 
     def to_html(self, *, title: str, detail: str) -> str:
         """Render the diff report as a self-contained HTML document."""
-        # Recompute diff HTML (cheap for typical transcript lengths)
-        expected_norm = normalize_text_for_diff(self.text_expected)
-        got_norm = normalize_text_for_diff(self.text_got)
-        dmp = diff_match_patch()
-        diffs = dmp.diff_main(expected_norm, got_norm)
-        dmp.diff_cleanupSemantic(diffs)
-        diff_html = dmp.diff_prettyHtml(diffs)
+        diff_html = diff_match_patch().diff_prettyHtml(self.diffs)
 
         return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <title>{_escape_html(title)}</title>
+  <title>{escape(title)}</title>
   <style>
     body {{
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
@@ -284,9 +266,9 @@ class DiffReport:
   </style>
 </head>
 <body>
-  <h1>{_escape_html(title)}: {self.word_error_rate}% WER / {self.character_error_rate}% CER</h1>
+  <h1>{escape(title)}: {self.word_error_rate}% WER / {self.character_error_rate}% CER</h1>
 
-  <div class='hint'>{_escape_html(detail)}</div>
+  <div class='hint'>{escape(detail)}</div>
 
   <div class="stats">
     <div class="stat">
@@ -335,12 +317,12 @@ class DiffReport:
 
   <div class="panel">
     <h2>Expected (Ground Truth)</h2>
-    <pre>{_escape_html(self.text_expected)}</pre>
+    <pre>{escape(self.text_expected)}</pre>
   </div>
 
   <div class="panel">
     <h2>Got (Result of STT)</h2>
-    <pre>{_escape_html(self.text_got)}</pre>
+    <pre>{escape(self.text_got)}</pre>
   </div>
 
 

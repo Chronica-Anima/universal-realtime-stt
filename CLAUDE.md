@@ -32,59 +32,56 @@ pytest tests/test_stt.py::TestStt::test_deepgram -v   # one provider
 pytest tests/test_tts.py -v                           # ElevenLabs TTS, live
 python benchmark.py                                   # all configured providers in parallel
 python benchmark.py --providers Speechmatics,Deepgram
-python -m helpers.collect_reports                     # TSV summary of the HTML diffs in out/
 python -m helpers.report_summary "Label=out/<run>_benchmark.tsv:Provider" ...   # report table over the meaningful assets
 ```
 
-The provider tests are `test_cartesia`, `test_deepgram`, `test_eleven_labs`, `test_eleven_labs_v3`, `test_google`, `test_speechmatics`, `test_gemini_live` and `test_speechmatics_semantics`. A live test with a missing key or package fails rather than skips. The benchmark skips a provider whose key is missing; its names are `Cartesia`, `Deepgram`, `ElevenLabs` (`scribe_v2_realtime`), `ElevenLabsV3` (`scribe_v3_live`), `Google`, `Speechmatics` (`enhanced` model) and `GeminiLive`.
+The provider tests are `test_cartesia`, `test_deepgram`, `test_eleven_labs`, `test_eleven_labs_v3`, `test_google`, `test_speechmatics` and `test_gemini_live`, each streaming the first two assets. A live test with a missing key or package fails rather than skips. The benchmark skips a provider whose key is missing; its names are `Cartesia`, `Deepgram`, `ElevenLabs` (`scribe_v2_realtime`), `ElevenLabsV3` (`scribe_v3_live`), `Google`, `Speechmatics` (`enhanced` model) and `GeminiLive`.
 
 A full benchmark run streams every asset in real time and is billed by each provider. Run only the providers a question needs, with `--providers`, and never the full set unless explicitly asked.
 
-Output: HTML diffs and `<timestamp>_benchmark.tsv` in `out/`, logs in `log/` (DEBUG for `universal_realtime_stt_tts.*`, INFO for third-party libraries).
+Output: HTML diffs and `<timestamp>_benchmark.tsv` in `out/`, the TSV rewritten after every finished file. Logs go to `log/`: tests log project modules at DEBUG, the benchmark at INFO, third-party libraries at INFO.
 
-### Published numbers versus raw benchmark output
+### Published numbers
 
-The benchmark always runs every asset. Published figures then average only the meaningful assets, so a plain average over a raw `*_benchmark.tsv` does not match them, and the gap is not provider drift. Recordings no provider transcribes reasonably say nothing about the providers.
-
-- `doc/report.md` counts an asset when at least one of the reported runs reached 40% WER or better on it. `python -m helpers.report_summary` applies that rule to the runs it is given as `LABEL=PATH[:PROVIDER]` and prints the per-provider table, so the same runs always give the same table. No list of asset names is stored in this repository; asset names belong only in the private `assets/` repository.
-- The poster (May 2026) averaged a 65-file subset built by hand in a spreadsheet. It dropped the unintelligible recordings and every file Speechmatics Enhanced had no result for after running out of quota. Its numbers are not comparable with `doc/report.md`.
-
-To compare a new run with a published figure, summarize it together with the published runs.
+`doc/report.md` and the poster `doc/poster-ml-prague-2026-stt-benchmark.md` publish the same table and stay in sync. Both average only the meaningful assets, those on which at least one reported run reached 40% WER or better, so a plain average over a raw `*_benchmark.tsv` does not match them. `python -m helpers.report_summary` applies that rule to the runs given as `LABEL=PATH[:PROVIDER]`; to compare a new run with a published figure, summarize it together with the published runs. Asset names belong only in the private `assets/` repository, never in this one.
 
 ## Architecture
 
 Everything is async, and components talk through queues that end with a `None` sentinel.
 
-### `universal_realtime_stt_tts/` — the library
+### `universal_realtime_stt_tts/`: the library
 
-- `stt_provider.py` — the `RealtimeSttProvider` protocol and the frozen `TranscriptEvent` (`text`, `is_final`, optional `speaker` for diarization). Providers satisfy the protocol structurally, without inheriting.
-- `tts_provider.py` — the `RealtimeTtsProvider` protocol: `synthesize(text, language)` yields PCM chunks.
-- `stt_provider_<name>.py` — one module per provider, each with a frozen config dataclass and a provider class.
-- `_event_queue.py` — `SttEventQueue`, which every STT provider composes: event queue, error state, a single sentinel, and `recv_guard()` for WebSocket close and cancellation handling.
-- `stt.py` — `stt_session_task()` runs a sender (audio queue to provider, with silence keepalive) and a receiver (provider events, partial and final, to the transcript queue) concurrently.
-- `tts_provider_elevenlabs.py` — ElevenLabs TTS through `AsyncElevenLabs` and the `/stream` endpoint; the client is cached per API key, base URL and running loop.
-- `config.py` — central defaults: language `cs` / `cs-CZ` (BCP-47, for Google), 16 kHz mono PCM16LE audio, VAD thresholds.
+- `stt_provider.py`: the `RealtimeSttProvider` protocol and the frozen `TranscriptEvent` (`text`, `is_final`, optional `speaker` for diarization). Providers satisfy the protocol structurally, without inheriting.
+- `tts_provider.py`: the `RealtimeTtsProvider` protocol, whose `synthesize(text, language)` yields PCM chunks.
+- `stt_provider_<name>.py`: one module per provider, each with a frozen config dataclass and a provider class.
+- `_event_queue.py`: `SttEventQueue`, which every STT provider composes: event queue, error state, one sentinel, `recv_guard()` for WebSocket close and cancellation, and `finish_from_thread()` for Google's worker thread.
+- `stt.py`: `stt_session_task()` runs a sender (audio queue to provider, 100 ms of silence after 5 s without audio) and a receiver (provider events, partial and final, to the transcript queue) concurrently.
+- `tts_provider_elevenlabs.py`: ElevenLabs TTS through `AsyncElevenLabs` and the `/stream` endpoint; the client is cached per API key, base URL and running loop.
+- `config.py`: central defaults: language `cs` / `cs-CZ` (BCP-47, for Google), 16 kHz mono PCM16LE audio, VAD thresholds, and the input volume threshold, which only Speechmatics maps.
+- `utils.py`: `setup_logging()` for the tests and the benchmark.
 
-Provider config dataclasses take their defaults from `config.py`, and each provider maps them to its own parameter names and units, so a change there reaches every provider. API keys are injected at instantiation.
+Provider config dataclasses take their defaults from `config.py`, and each provider maps them to its own parameter names and units. API keys are injected at instantiation.
 
 | Provider     | Transport                                         |
 | ------------ | ------------------------------------------------- |
 | ElevenLabs   | `elevenlabs` SDK, callback-based                  |
 | Speechmatics | `speechmatics-rt` SDK, speaker by majority vote   |
-| Google       | `google-cloud-speech` SDK                         |
+| Google       | `google-cloud-speech` SDK in a worker thread      |
 | Gemini Live  | `google-genai` SDK, preview model                 |
 | Deepgram     | raw WebSocket                                     |
 | Cartesia     | raw WebSocket                                     |
 
-The core depends only on `websockets` and `python-dotenv`; each provider SDK is an optional extra in `pyproject.toml`.
+The core depends only on `websockets`. Each provider SDK is an optional extra in `pyproject.toml`, imported inside the provider so the module loads without it. `python-dotenv` comes with the `benchmark` and `dev` extras.
 
-### `helpers/` — tests and benchmark
+### `helpers/`: tests and benchmark
 
-- `transcribe.py` — `transcribe_and_diff()` streams a file, collects final transcripts, diffs them against ground truth and writes the HTML report; `custom_metric_fn` adds a metric such as semantic understanding.
-- `stream_wav.py` — paces PCM chunks in real time and appends silence so the VAD commits the last utterance.
-- `diff_report.py` — `DiffReport`: HTML report and Levenshtein-based CER and WER.
-- `transcript_ingest.py` — collects the `is_final` events from the transcript queue.
-- `semantic_understanding.py`, `llm_api.py` — the Gemini-based semantic error rate metric, described in `doc/semantic_understanding_metric.md`. Without `google-genai` the benchmark warns and runs without it.
+- `transcribe.py`: `transcribe_and_diff()` streams a file, collects final transcripts, diffs them against ground truth and writes the HTML report. Pacing arguments are required keywords, `custom_metric_fn` adds a metric such as semantic understanding, and cancelling it cancels its session.
+- `stream_wav.py`: paces PCM chunks in real time and pads silence so the VAD commits the last utterance.
+- `diff_report.py`: `DiffReport`, the HTML report and Levenshtein-based CER and WER.
+- `transcript_ingest.py`: collects the final events from the transcript queue; errors propagate.
+- `semantic_understanding.py`: the Gemini-based semantic error rate, described in `doc/semantic_understanding_metric.md`. Without `google-genai` the benchmark warns and runs without it.
+- `report_summary.py`: the published table over the meaningful assets.
+- `load_assets.py`: finds the WAV/TXT pairs.
 
 `pytest_config.py` holds the test and benchmark paths and pacing (`OUT_PATH`, `ASSETS_DIR`, `LOG_PATH`, `CHUNK_MS`, `TEST_REALTIME_FACTOR`, `FINAL_SILENCE_S`). Library code never imports it.
 
@@ -96,9 +93,7 @@ ffmpeg -i input.mp3 -ac 1 -ar 16000 -c:a pcm_s16le output.wav
 
 ## Adding a provider
 
-An STT provider is `universal_realtime_stt_tts/stt_provider_<name>.py` with a frozen config dataclass (API key plus provider settings, defaults from `config.py`) and a class implementing `async __aenter__`/`__aexit__`, `send_audio(bytes)`, `end_audio()` and `events() -> AsyncIterator[TranscriptEvent]`, backed by `SttEventQueue`. ADRs 0001 and 0004 in `doc/adr/` record when a provider uses its SDK and when a raw WebSocket. Then add a test in `tests/test_stt.py`, an entry in `build_provider_specs()` in `benchmark.py`, and its key to the README's credential list.
-
-A TTS provider is `tts_provider_<name>.py` with a frozen config dataclass and a class implementing `RealtimeTtsProvider`.
+The module docstring of `universal_realtime_stt_tts/stt_provider.py` is the template for an STT provider, including the files to update. Import the provider SDK inside the provider so the module loads without its extra, and add the credential variable to the `.env` table above. A TTS provider is `tts_provider_<name>.py` with a frozen config dataclass and a class implementing `RealtimeTtsProvider`.
 
 ## Conventions
 

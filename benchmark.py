@@ -2,30 +2,8 @@
 STT Provider Benchmark
 ======================
 
-Runs all STT providers in parallel against every WAV/TXT asset pair,
-collects accuracy metrics, and writes a TSV summary report.
-
-Architecture
-------------
-1. **Provider registry** — a list of (provider_class, config) tuples built
-   from environment variables. Providers whose API key is missing are skipped
-   with a warning (except Google which uses ADC).
-
-2. **Parallel execution** — each provider gets its own async task via
-   asyncio.gather. Within a provider task, asset files are processed
-   sequentially (streaming is real-time so we can't rush it). The design
-   isolates providers from each other: one provider failing does not affect
-   the others.
-
-   Future extension: the inner file loop can be parallelised too — each
-   file would get its own provider instance and task. The result collection
-   is already flat (provider x file), so this requires no structural change.
-
-3. **Result collation** — every (provider, file) pair produces a DiffReport.
-   These are flattened into a single list, sorted by provider then file,
-   and written as a TSV file to the `out/` directory. The TSV includes:
-   provider, file, chars_expected, chars_got, CER%, match%, char_levenshtein,
-   matched/inserted/deleted char counts, and the path to the HTML diff.
+Runs every configured STT provider in parallel against every WAV/TXT asset pair and
+writes the HTML diffs and `<timestamp>_benchmark.tsv` to `out/`.
 
 Usage
 -----
@@ -37,7 +15,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import signal
+import os
 import sys
 import time
 from dataclasses import dataclass
@@ -51,7 +29,7 @@ from dotenv import load_dotenv
 
 from helpers.diff_report import CustomMetricResult, DiffReport
 from helpers.load_assets import get_test_files, AssetPair
-from helpers.stream_wav import inspect_wav
+from helpers.stream_wav import wav_duration_s
 from helpers.transcribe import transcribe_and_diff
 from pytest_config import CHUNK_MS, TEST_REALTIME_FACTOR, FINAL_SILENCE_S, OUT_PATH, ASSETS_DIR, LOG_PATH
 from universal_realtime_stt_tts.config import AUDIO_SAMPLE_RATE
@@ -69,10 +47,6 @@ logger = getLogger(__name__)
 load_dotenv()
 
 
-# ---------------------------------------------------------------------------
-# Result container
-# ---------------------------------------------------------------------------
-
 MAX_RETRIES = 3
 RETRY_DELAY_S = 30.0
 CONSECUTIVE_FAILURE_LIMIT = 5  # stop provider after this many failures in a row
@@ -87,10 +61,6 @@ class BenchmarkResult:
     error: str | None  # error message if failed
 
 
-# ---------------------------------------------------------------------------
-# Provider registry
-# ---------------------------------------------------------------------------
-
 @dataclass(frozen=True)
 class ProviderSpec:
     """Everything needed to instantiate and run one provider."""
@@ -99,105 +69,68 @@ class ProviderSpec:
     config: Any
 
 
+# (credential env var, benchmark name, provider class, config built from the credential).
+# Google authenticates through ADC, so its credentials path only decides whether it runs.
+PROVIDERS: list[tuple[str, str, type[Any], Callable[[str], Any]]] = [
+    ("CARTESIA_API_KEY", "Cartesia", CartesiaInkProvider, lambda credential: CartesiaSttConfig(api_key=credential)),
+    ("DEEPGRAM_API_KEY", "Deepgram", DeepgramRealtimeProvider, lambda credential: DeepgramSttConfig(api_key=credential)),
+    ("ELEVENLABS_API_KEY", "ElevenLabs", ElevenLabsSttProvider,
+     lambda credential: ElevenLabsSttConfig(api_key=credential)),
+    ("ELEVENLABS_API_KEY", "ElevenLabsV3", ElevenLabsSttProvider,
+     lambda credential: ElevenLabsSttConfig(api_key=credential, model="scribe_v3_live")),
+    ("GOOGLE_APPLICATION_CREDENTIALS", "Google", GoogleRealtimeProvider, lambda credential: GoogleSttConfig()),
+    ("SPEECHMATICS_API_KEY", "Speechmatics", SpeechmaticsSttProvider,
+     lambda credential: SpeechmaticsSttConfig(api_key=credential)),
+    ("GEMINI_API_KEY", "GeminiLive", GeminiLiveProvider, lambda credential: GeminiLiveSttConfig(api_key=credential)),
+]
+
+
 def build_provider_specs() -> list[ProviderSpec]:
     """Build list of providers that have valid credentials configured."""
     specs: list[ProviderSpec] = []
-
-    key = getenv("CARTESIA_API_KEY")
-    if key:
-        specs.append(ProviderSpec("Cartesia", CartesiaInkProvider, CartesiaSttConfig(api_key=key)))
-    else:
-        logger.warning("CARTESIA_API_KEY not set — skipping Cartesia.")
-
-    key = getenv("DEEPGRAM_API_KEY")
-    if key:
-        specs.append(ProviderSpec("Deepgram", DeepgramRealtimeProvider, DeepgramSttConfig(api_key=key)))
-    else:
-        logger.warning("DEEPGRAM_API_KEY not set — skipping Deepgram.")
-
-    key = getenv("ELEVENLABS_API_KEY")
-    if key:
-        specs.append(ProviderSpec("ElevenLabs", ElevenLabsSttProvider, ElevenLabsSttConfig(api_key=key)))
-        specs.append(ProviderSpec(
-            "ElevenLabsV3", ElevenLabsSttProvider, ElevenLabsSttConfig(api_key=key, model="scribe_v3_live"),
-        ))
-    else:
-        logger.warning("ELEVENLABS_API_KEY not set — skipping ElevenLabs.")
-
-    # Google uses ADC — no API key needed, but check if credentials file is set
-    if getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-        specs.append(ProviderSpec("Google", GoogleRealtimeProvider, GoogleSttConfig()))
-    else:
-        logger.warning("GOOGLE_APPLICATION_CREDENTIALS not set — skipping Google.")
-
-    key = getenv("SPEECHMATICS_API_KEY")
-    if key:
-        specs.append(ProviderSpec("Speechmatics", SpeechmaticsSttProvider, SpeechmaticsSttConfig(api_key=key)))
-    else:
-        logger.warning("SPEECHMATICS_API_KEY not set — skipping Speechmatics.")
-
-    key = getenv("GEMINI_API_KEY")
-    if key:
-        specs.append(ProviderSpec("GeminiLive", GeminiLiveProvider, GeminiLiveSttConfig(api_key=key)))
-    else:
-        logger.warning("GEMINI_API_KEY not set — skipping Gemini Live.")
-
+    for env_var, name, provider_class, make_config in PROVIDERS:
+        credential = getenv(env_var)
+        if credential:
+            specs.append(ProviderSpec(name, provider_class, make_config(credential)))
+        else:
+            logger.warning("%s not set, skipping %s.", env_var, name)
     return specs
 
-
-# ---------------------------------------------------------------------------
-# Per-provider runner (processes all files sequentially)
-# ---------------------------------------------------------------------------
 
 async def run_provider(
     spec: ProviderSpec,
     pairs: list[AssetPair],
-    ts: str,
-    results_acc: list[BenchmarkResult],
-    results_lock: asyncio.Lock,
+    timestamp: str,
+    all_results: list[BenchmarkResult],
     custom_metric_fn: Callable[[str, str], Awaitable[CustomMetricResult]] | None = None,
-) -> list[BenchmarkResult]:
-    """Run one provider against all asset files. Returns one result per file.
-
-    Results are also appended to `results_acc` (under lock) for incremental TSV writes.
-    """
-    results: list[BenchmarkResult] = []
+) -> None:
+    """Run one provider against all asset files, appending each result to all_results and rewriting the TSV."""
     total = len(pairs)
     consecutive_failures = 0
 
-    for idx, pair in enumerate(pairs, 1):
-        # Circuit breaker: stop after too many consecutive failures
+    for position, pair in enumerate(pairs, 1):
         if consecutive_failures >= CONSECUTIVE_FAILURE_LIMIT:
-            msg = f"Stopped after {CONSECUTIVE_FAILURE_LIMIT} consecutive failures"
-            logger.error("[%s] %s — %s", spec.name, pair.wav.name, msg)
-            result = BenchmarkResult(spec.name, pair.wav.name, None, None, msg)
-            results.append(result)
-            async with results_lock:
-                results_acc.append(result)
-            continue
-
-        logger.info("[%s] (%d/%d) Processing %s ...", spec.name, idx, total, pair.wav.name)
-        t0 = time.monotonic()
-        report_path = OUT_PATH / f"{ts}_{spec.name}_{pair.wav.stem}.diff.html"
-
-        result = await _run_single_file(spec, pair, report_path, custom_metric_fn)
-
-        elapsed = time.monotonic() - t0
-        if result.report:
-            consecutive_failures = 0
-            logger.info("[%s] (%d/%d) %s — WER: %.1f%%, CER: %.1f%% (%.1fs)",
-                        spec.name, idx, total, pair.wav.name,
-                        result.report.word_error_rate, result.report.character_error_rate, elapsed)
+            message = f"Stopped after {CONSECUTIVE_FAILURE_LIMIT} consecutive failures"
+            logger.error("[%s] %s: %s", spec.name, pair.wav.name, message)
+            result = BenchmarkResult(spec.name, pair.wav.name, None, None, message)
         else:
-            consecutive_failures += 1
-            logger.error("[%s] (%d/%d) %s — FAILED (attempt exhausted, %.1fs): %s",
-                         spec.name, idx, total, pair.wav.name, elapsed, result.error)
+            logger.info("[%s] (%d/%d) Processing %s ...", spec.name, position, total, pair.wav.name)
+            started = time.monotonic()
+            report_path = OUT_PATH / f"{timestamp}_{spec.name}_{pair.wav.stem}.diff.html"
+            result = await _run_single_file(spec, pair, report_path, custom_metric_fn)
+            elapsed = time.monotonic() - started
+            if result.report:
+                consecutive_failures = 0
+                logger.info("[%s] (%d/%d) %s: WER %.1f%%, CER %.1f%% (%.1fs)",
+                            spec.name, position, total, pair.wav.name,
+                            result.report.word_error_rate, result.report.character_error_rate, elapsed)
+            else:
+                consecutive_failures += 1
+                logger.error("[%s] (%d/%d) %s: FAILED (attempts exhausted, %.1fs): %s",
+                             spec.name, position, total, pair.wav.name, elapsed, result.error)
 
-        results.append(result)
-        async with results_lock:
-            results_acc.append(result)
-
-    return results
+        all_results.append(result)
+        write_tsv(all_results, timestamp)
 
 
 async def _run_single_file(
@@ -208,8 +141,7 @@ async def _run_single_file(
 ) -> BenchmarkResult:
     """Attempt to transcribe a single file with retry and timeout."""
     # Timeout scales with file duration: real-time streaming + generous headroom
-    wav_info = inspect_wav(pair.wav)
-    timeout_s = wav_info.n_frames / wav_info.sample_rate + 120
+    timeout_s = wav_duration_s(pair.wav) + 120
 
     last_error: str = ""
 
@@ -238,60 +170,55 @@ async def _run_single_file(
 
         except asyncio.TimeoutError:
             last_error = f"Timed out after {timeout_s:.0f}s (attempt {attempt}/{MAX_RETRIES})"
-            logger.warning("[%s] %s — %s", spec.name, pair.wav.name, last_error)
+            logger.warning("[%s] %s: %s", spec.name, pair.wav.name, last_error)
 
-        except Exception as exc:
-            last_error = f"{exc} (attempt {attempt}/{MAX_RETRIES})"
-            logger.warning("[%s] %s — %s", spec.name, pair.wav.name, last_error)
+        except Exception as error:
+            last_error = f"{error} (attempt {attempt}/{MAX_RETRIES})"
+            logger.warning("[%s] %s: %s", spec.name, pair.wav.name, last_error)
 
-        # Delay before retry (but not after the last attempt)
         if attempt < MAX_RETRIES:
             await asyncio.sleep(RETRY_DELAY_S)
 
     return BenchmarkResult(spec.name, pair.wav.name, None, None, last_error)
 
 
-# ---------------------------------------------------------------------------
-# TSV report writer
-# ---------------------------------------------------------------------------
+def write_tsv(results: list[BenchmarkResult], timestamp: str) -> Path | None:
+    """Rewrite the full TSV snapshot of results, atomically.
 
-def write_tsv(results: list[BenchmarkResult], ts: str) -> Path | None:
-    """Write all benchmark results to a single TSV file, overwriting any previous version.
-
-    Called periodically and on shutdown with the full accumulated result list —
-    each write produces a complete snapshot, not an incremental append.
-    Columns are derived from DiffReport.to_metrics_dict().
+    Deliberately synchronous: with no await inside, providers running in parallel on the
+    event loop cannot interleave writes or append to results mid-write.
     """
-    results_sorted = sorted(results, key=lambda r: (r.provider_name, r.file_name))
+    results_sorted = sorted(results, key=lambda result: (result.provider_name, result.file_name))
 
-    # Discover metric columns from the first successful report
-    sample = next((r.report for r in results_sorted if r.report), None)
-    metric_cols = list(sample.to_metrics_dict()) if sample else []
+    # Union over all reports: a column such as custom_metric can be missing from some of them.
+    metric_columns = list(dict.fromkeys(
+        column for result in results_sorted if result.report for column in result.report.to_metrics_dict()
+    ))
 
-    header = ["provider", "file"] + metric_cols + ["diff_report", "error"]
+    header = ["provider", "file"] + metric_columns + ["diff_report", "error"]
     rows = ["\t".join(header)]
-    for r in results_sorted:
-        if r.report:
-            metrics = r.report.to_metrics_dict()
-            row = [r.provider_name, r.file_name] + [metrics.get(c, "") for c in metric_cols] + [r.report_path.name if r.report_path else "", ""]
+    for result in results_sorted:
+        if result.report:
+            metrics = result.report.to_metrics_dict()
+            report_name = result.report_path.name if result.report_path else ""
+            row = [metrics.get(column, "") for column in metric_columns] + [report_name, ""]
         else:
-            row = [r.provider_name, r.file_name] + [""] * len(metric_cols) + ["", r.error or "unknown error"]
-        rows.append("\t".join(row))
+            row = [""] * len(metric_columns) + ["", result.error or "unknown error"]
+        rows.append("\t".join([result.provider_name, result.file_name] + row))
 
+    tsv_path = OUT_PATH / f"{timestamp}_benchmark.tsv"
+    # Write beside the target, then rename: a crash mid-write leaves the previous snapshot intact.
+    partial_path = tsv_path.with_name(tsv_path.name + ".partial")
     try:
-        tsv_path = OUT_PATH / f"{ts}_benchmark.tsv"
-        tsv_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
-    except Exception as exc:
-        logger.exception("Could not write file: %r", exc)
-        print(rows)
+        partial_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+        os.replace(partial_path, tsv_path)
+    except OSError as error:
+        logger.exception("Could not write %s: %r", tsv_path, error)
+        print("\n".join(rows))
         return None
 
     return tsv_path
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def select_specs(specs: list[ProviderSpec], requested_names: list[str]) -> list[ProviderSpec]:
     """Filter built specs down to the requested provider names (case-insensitive)."""
@@ -306,11 +233,7 @@ def select_specs(specs: list[ProviderSpec], requested_names: list[str]) -> list[
 
 
 async def main(requested_names: list[str] | None = None) -> None:
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    # SIGTERM cancels this task so the finally block can flush results
-    main_task = asyncio.current_task()
-    asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, lambda *_: main_task.cancel())  # noqa
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     specs = build_provider_specs()
     if not specs:
@@ -329,79 +252,55 @@ async def main(requested_names: list[str] | None = None) -> None:
     gemini_key = getenv("GEMINI_API_KEY")
     if gemini_key:
         try:
-            from helpers.semantic_understanding import SemanticUnderstandingAnalyzer  # noqa: F821 — false positive, not used if import fails
+            from helpers.semantic_understanding import SemanticUnderstandingAnalyzer
             semantic_understanding_fn = SemanticUnderstandingAnalyzer(api_key=gemini_key).compare
             logger.info("Semantic understanding metric enabled (Gemini).")
         except ImportError:
             logger.warning(
-                "GEMINI_API_KEY is set but google-genai is not installed — "
-                "semantic understanding metric disabled. "
+                "GEMINI_API_KEY is set but google-genai is not installed, so the "
+                "semantic understanding metric is disabled. "
                 "Install it with: pip install -e \".[gemini]\""
             )
     else:
-        logger.warning("GEMINI_API_KEY not set — semantic understanding metric disabled.")
+        logger.warning("GEMINI_API_KEY not set, semantic understanding metric disabled.")
 
     logger.info("Benchmark starting: %d provider(s), %d file(s).", len(specs), len(pairs))
 
-    # Append-only accumulator — periodic flush and final write both rewrite the full TSV
     all_results: list[BenchmarkResult] = []
-    results_lock = asyncio.Lock()
-
-    # Periodic TSV flush task
-    async def periodic_flush():
-        while True:
-            await asyncio.sleep(300)
-            async with results_lock:
-                if all_results:
-                    write_tsv(list(all_results), ts)
-
-    flush_task = asyncio.create_task(periodic_flush())
-
-    # Run all providers in parallel with return_exceptions=True
     try:
-        nested = await asyncio.gather(
-            *(run_provider(spec, pairs, ts, all_results, results_lock,
-                           custom_metric_fn=semantic_understanding_fn)
+        outcomes = await asyncio.gather(
+            *(run_provider(spec, pairs, timestamp, all_results, custom_metric_fn=semantic_understanding_fn)
               for spec in specs),
             return_exceptions=True,
         )
-        # Handle any provider-level exceptions
-        for spec, result in zip(specs, nested):
-            if isinstance(result, BaseException):
-                logger.error("[%s] Provider task crashed: %s", spec.name, result)
-
+        for spec, outcome in zip(specs, outcomes):
+            if isinstance(outcome, BaseException):
+                logger.error("[%s] Provider task crashed: %s", spec.name, outcome)
     except (KeyboardInterrupt, asyncio.CancelledError):
-        logger.warning("Benchmark interrupted — saving partial results.")
-
-    finally:
-        flush_task.cancel()
-        try:
-            await flush_task
-        except asyncio.CancelledError:
-            pass
-        tsv_path = write_tsv(list(all_results), ts) if all_results else None
+        logger.warning("Benchmark interrupted, the TSV holds every finished file.")
 
     if not all_results:
         logger.error("No results collected.")
         sys.exit(1)
 
+    tsv_path = OUT_PATH / f"{timestamp}_benchmark.tsv"
     logger.info("Benchmark complete. TSV report: %s", tsv_path)
 
-    # Print summary to stdout
     width = 72
-
     print(f"\n{'=' * width}")
-    print(f"BENCHMARK RESULTS — {ts}")
+    print(f"BENCHMARK RESULTS, {timestamp}")
     print(f"{'=' * width}")
     print(f"{'Provider':<16} {'File':<14} {'WER%':>6} {'CER%':>6} {'SER%':>6} {'Match%':>7} {'Exp':>5} {'Got':>5}")
     print(f"{'-' * width}")
-    for r in sorted(all_results, key=lambda x: (x.provider_name, x.file_name)):
-        if r.report:
-            rp = r.report
-            ser = f"{rp.custom_metric.score:>5.1f}%" if rp.custom_metric is not None else f"{'—':>6}"
-            print(f"{r.provider_name:<16} {r.file_name:<14} {rp.word_error_rate:>5.1f}% {rp.character_error_rate:>5.1f}% {ser} {rp.match_percentage:>6.1f}% {rp.chars_expected:>5} {rp.chars_got:>5}")
+    for result in sorted(all_results, key=lambda result: (result.provider_name, result.file_name)):
+        report = result.report
+        if report:
+            semantic = f"{report.custom_metric.score:>5.1f}%" if report.custom_metric is not None else f"{'-':>6}"
+            print(f"{result.provider_name:<16} {result.file_name:<14} {report.word_error_rate:>5.1f}% "
+                  f"{report.character_error_rate:>5.1f}% {semantic} {report.match_percentage:>6.1f}% "
+                  f"{report.chars_expected:>5} {report.chars_got:>5}")
         else:
-            print(f"{r.provider_name:<16} {r.file_name:<14} {'FAILED':>6}  {r.error or ''}")
+            print(f"{result.provider_name:<16} {result.file_name:<14} {'FAILED':>6}  {result.error or ''}")
     print(f"{'=' * width}")
     print(f"TSV: {tsv_path}")
 

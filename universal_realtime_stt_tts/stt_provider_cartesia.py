@@ -13,7 +13,7 @@ from universal_realtime_stt_tts.config import (
     AUDIO_SAMPLE_RATE, AUDIO_ENCODING, STT_INPUT_VOLUME_THRESHOLD, STT_LANGUAGE_ISO_639_1, STT_VAD_SILENCE_THRESHOLD_S,
 )
 from universal_realtime_stt_tts._event_queue import SttEventQueue
-from universal_realtime_stt_tts.stt_provider import RealtimeSttProvider, TranscriptEvent
+from universal_realtime_stt_tts.stt_provider import TranscriptEvent
 
 logger = getLogger(__name__)
 
@@ -28,11 +28,12 @@ class CartesiaSttConfig:
     sample_rate: int = AUDIO_SAMPLE_RATE
     min_volume: float = 0.15
     max_silence_duration_secs: float = STT_VAD_SILENCE_THRESHOLD_S
-    # Ignored: min_volume is Cartesia's own 0-1 VAD gate on a different scale, set it directly.
+    # Not mapped for Cartesia yet; whether it has an equivalent is untested. min_volume
+    # is Cartesia's own 0-1 VAD gate on a different scale.
     input_volume_threshold: float | None = STT_INPUT_VOLUME_THRESHOLD
 
 
-class CartesiaInkProvider(RealtimeSttProvider):
+class CartesiaInkProvider:
     """
     Cartesia streaming STT over WebSocket (Ink-Whisper).
 
@@ -44,7 +45,7 @@ class CartesiaInkProvider(RealtimeSttProvider):
     """
     def __init__(self, cfg: CartesiaSttConfig) -> None:
         if cfg.input_volume_threshold is not None:
-            logger.debug("[STT] Cartesia: input_volume_threshold has no equivalent; ignored (see min_volume).")
+            logger.debug("[STT] Cartesia: input_volume_threshold is not mapped for this provider yet; ignored.")
         self._cfg = cfg
         self._ws = None
         self._eq = SttEventQueue(logger)

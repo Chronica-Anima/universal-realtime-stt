@@ -7,25 +7,17 @@ date: 2026-05-08
 
 ## Context and Problem Statement
 
-The library handled only STT. The consuming application needed TTS and was going to implement it separately. Having both audio directions in one library avoids duplicating provider management, config patterns, and dependency wiring.
-
-## Considered Options
-
-- Keep TTS in the application layer
-- Add `RealtimeTtsProvider` protocol to this library with an ElevenLabs implementation
+The consuming application needs TTS as well as STT. Keeping both audio directions in one library shares provider management, config patterns and dependency wiring.
 
 ## Decision Outcome
 
-Add TTS protocol and ElevenLabs provider.
+`RealtimeTtsProvider` defines one method, `synthesize(text, language) -> AsyncIterator[bytes]`, yielding raw PCM 16-bit LE mono chunks at the library sample rate.
 
-`RealtimeTtsProvider` defines a single method: `async def synthesize(text, language) -> AsyncIterator[bytes]`, yielding raw PCM 16-bit LE, 16 kHz mono chunks. The provider manages its own connection lifecycle per call.
+ElevenLabs TTS streams through `AsyncElevenLabs.text_to_speech.stream`, so synthesis never blocks the event loop. The client is cached at module level per API key, base URL and running loop: callers build a provider per utterance and still share one connection pool, and no pool outlives the loop that opened it.
 
-ElevenLabs TTS uses the `elevenlabs` SDK (`client.text_to_speech.convert()` with `output_format="pcm_16000"`).
-
-Speechmatics TTS was considered but is English-only — not implemented until Czech support is available.
+Speechmatics TTS is not implemented because it does not support Czech.
 
 ## Consequences
 
-- Library becomes `universal-realtime-stt-tts` (renamed from `universal-realtime-stt`)
-- TTS providers follow the same pattern as STT: frozen config dataclass + protocol implementation
-- `elevenlabs` SDK serves both STT and TTS
+- TTS providers follow the STT pattern: a frozen config dataclass plus a protocol implementation.
+- The `elevenlabs` SDK serves both STT and TTS.

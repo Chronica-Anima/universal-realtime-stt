@@ -13,7 +13,7 @@ from universal_realtime_stt_tts.config import (
     AUDIO_CHANNELS, AUDIO_SAMPLE_RATE, STT_INPUT_VOLUME_THRESHOLD, STT_LANGUAGE_ISO_639_1, STT_VAD_SILENCE_THRESHOLD_S,
 )
 from universal_realtime_stt_tts._event_queue import SttEventQueue
-from universal_realtime_stt_tts.stt_provider import RealtimeSttProvider, TranscriptEvent
+from universal_realtime_stt_tts.stt_provider import TranscriptEvent
 
 logger = getLogger(__name__)
 
@@ -31,13 +31,14 @@ class DeepgramSttConfig:
     sample_rate: int = AUDIO_SAMPLE_RATE
     channels: int = AUDIO_CHANNELS
     endpointing_ms: int = int(STT_VAD_SILENCE_THRESHOLD_S * 1000)
-    input_volume_threshold: float | None = STT_INPUT_VOLUME_THRESHOLD  # no Deepgram equivalent; ignored
+    # Not mapped for Deepgram yet; whether it has an equivalent is untested.
+    input_volume_threshold: float | None = STT_INPUT_VOLUME_THRESHOLD
 
 
-class DeepgramRealtimeProvider(RealtimeSttProvider):
+class DeepgramRealtimeProvider:
     def __init__(self, cfg: DeepgramSttConfig) -> None:
         if cfg.input_volume_threshold is not None:
-            logger.debug("[STT] Deepgram: input_volume_threshold has no equivalent; ignored.")
+            logger.debug("[STT] Deepgram: input_volume_threshold is not mapped for this provider yet; ignored.")
         self._cfg = cfg
         self._ws = None
         self._eq = SttEventQueue(logger)
@@ -64,21 +65,15 @@ class DeepgramRealtimeProvider(RealtimeSttProvider):
         url = f"{self._cfg.base_url}?{qs}"
         logger.debug("[STT] Deepgram: connecting to %s", url)
 
-        try:
-            self._ws = await asyncio.wait_for(
-                connect(
-                    url,
-                    additional_headers={"Authorization": f"token {self._cfg.api_key}"},
-                    open_timeout=10,
-                    ping_interval=10,
-                    ping_timeout=10,
-                    close_timeout=5,
-                    max_queue=32,
-                ),
-                timeout=15.0,
-            )
-        except asyncio.TimeoutError:
-            raise RuntimeError("Deepgram WebSocket connection timed out after 15s")
+        self._ws = await connect(
+            url,
+            additional_headers={"Authorization": f"token {self._cfg.api_key}"},
+            open_timeout=10,
+            ping_interval=10,
+            ping_timeout=10,
+            close_timeout=5,
+            max_queue=32,
+        )
 
         logger.info("[STT] Deepgram: WebSocket connected.")
         self._rx_task = asyncio.create_task(self._recv_loop())
@@ -141,16 +136,14 @@ class DeepgramRealtimeProvider(RealtimeSttProvider):
                 typ = data.get("type")
 
                 if typ == "Results":
-                    if not data.get("is_final", False):
+                    alternatives = (data.get("channel") or {}).get("alternatives") or []
+                    if not alternatives:
                         continue
-                    channel = data.get("channel") or {}
-                    alts = channel.get("alternatives") or []
-                    if not alts:
-                        continue
-                    text = (alts[0].get("transcript") or "").strip()
+                    text = (alternatives[0].get("transcript") or "").strip()
                     if text:
-                        logger.debug("[STT] Deepgram: final transcript: %s", text[:50])
-                        await self._eq.put(TranscriptEvent(text=text, is_final=True))
+                        is_final = bool(data.get("is_final"))
+                        logger.debug("[STT] Deepgram: transcript (final=%s): %s", is_final, text[:50])
+                        await self._eq.put(TranscriptEvent(text=text, is_final=is_final))
                     continue
 
                 if typ in ("Metadata", "UtteranceEnd", "SpeechStarted"):

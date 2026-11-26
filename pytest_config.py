@@ -14,7 +14,7 @@ OUT_PATH = BASE_PATH / "out"
 OUT_PATH.mkdir(exist_ok=True)
 
 # Path to look for test assets
-ASSETS_DIR = Path(BASE_PATH / "assets")
+ASSETS_DIR = BASE_PATH / "assets"
 assert ASSETS_DIR.exists()
 
 # Path to save library logs

@@ -50,7 +50,7 @@ All 91 assets were run through Speechmatics with the repo default config, compar
 |       0.3 |                  45 / 24 |         +0.3 |                  43 / 32 |          0.0 |
 
 - **Normal speech:** at 0.2 the median file is unchanged on WER and SER. There is no same-day repeat of the threshold-off run, so run-to-run noise is not quantified.
-- **Near-silent input fails:** `vulehla-bohuslav-1927` (mean -59 dBFS) goes from WER 29.8 to 100 at every threshold. `yannakakis-ilios-1931` (mean -50 dBFS) goes from WER 40.7 to 62.6 at 0.15, 70.8 at 0.2 and 83.5 at 0.3. Their levelled copies and archive files at -34 to -40 dBFS are unaffected. Both are inaudible to a human without levelling, so their failure does not count against the threshold.
+- **Near-silent input fails:** the quietest file (mean -59 dBFS) goes from WER 29.8 to 100 at every threshold. The second quietest (mean -50 dBFS) goes from WER 40.7 to 62.6 at 0.15, 70.8 at 0.2 and 83.5 at 0.3. Their levelled copies and archive files at -34 to -40 dBFS are unaffected. Both are inaudible to a human without levelling, so their failure does not count against the threshold.
 - **Production headroom:** the two problem calls average -34 dBFS (EN phone) and -27 dBFS (CS web) on the user channel, 16 to 32 dB above the files that fail. These are whole-file means, which don't show per-chunk onset clipping.
 
 ## Method

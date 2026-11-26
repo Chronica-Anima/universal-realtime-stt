@@ -148,7 +148,7 @@ class SpeechmaticsSttProvider:
         if self._eq.error:
             raise self._eq.error
         if self._client:
-            await self._client.send_audio(bytes(pcm_chunk))
+            await self._client.send_audio(pcm_chunk)
 
     async def end_audio(self) -> None:
         if self._client:

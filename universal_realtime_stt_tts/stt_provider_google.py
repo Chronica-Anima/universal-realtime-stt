@@ -5,11 +5,9 @@ from dataclasses import dataclass
 from logging import getLogger
 from typing import AsyncIterator, Optional
 
-from google.cloud import speech
-
 from universal_realtime_stt_tts.config import AUDIO_SAMPLE_RATE, STT_INPUT_VOLUME_THRESHOLD, STT_LANGUAGE_BCP_47
 from universal_realtime_stt_tts._event_queue import SttEventQueue
-from universal_realtime_stt_tts.stt_provider import RealtimeSttProvider, TranscriptEvent
+from universal_realtime_stt_tts.stt_provider import TranscriptEvent
 
 logger = getLogger(__name__)
 
@@ -19,45 +17,38 @@ class GoogleSttConfig:
     """
     Configuration for Google Cloud Speech-to-Text realtime provider.
 
-    Note: Google uses Application Default Credentials (ADC) for authentication,
-    not an API key. Set GOOGLE_APPLICATION_CREDENTIALS environment variable
-    to point to your service account JSON file.
-
-    Provider-specific settings have defaults appropriate for Google.
-    Universal STT settings are imported from config.py but can be overridden.
+    Google authenticates with Application Default Credentials (ADC), not an
+    API key: point GOOGLE_APPLICATION_CREDENTIALS at a service-account JSON.
     """
 
-    encoding: speech.RecognitionConfig.AudioEncoding = speech.RecognitionConfig.AudioEncoding.LINEAR16
     interim_results: bool = True
     language: str = STT_LANGUAGE_BCP_47
     sample_rate: int = AUDIO_SAMPLE_RATE
-    input_volume_threshold: float | None = STT_INPUT_VOLUME_THRESHOLD  # no Google equivalent; ignored
+    # Not mapped for Google yet; whether it has an equivalent is untested.
+    input_volume_threshold: float | None = STT_INPUT_VOLUME_THRESHOLD
 
 
-class GoogleRealtimeProvider(RealtimeSttProvider):
+class GoogleRealtimeProvider:
     """
     Google Cloud Speech-to-Text v1 streaming adapter.
 
-    Library: google-cloud-speech
-    Uses: SpeechClient.streaming_recognize(streaming_config, requests)
-
-    Authentication: Uses Application Default Credentials (ADC).
-    Set GOOGLE_APPLICATION_CREDENTIALS env var to your service account JSON.
+    Runs the blocking ``SpeechClient.streaming_recognize`` in a worker thread,
+    fed from an asyncio queue. Requires the ``google`` extra, imported lazily
+    so this module loads without it.
     """
 
     def __init__(self, cfg: Optional[GoogleSttConfig] = None) -> None:
         self._cfg = cfg or GoogleSttConfig()
         if self._cfg.input_volume_threshold is not None:
-            logger.debug("[STT] Google: input_volume_threshold has no equivalent; ignored.")
+            logger.debug("[STT] Google: input_volume_threshold is not mapped for this provider yet; ignored.")
         self._audio_q: asyncio.Queue[Optional[bytes]] = asyncio.Queue(maxsize=400)
         self._eq = SttEventQueue(logger)
         self._closed = asyncio.Event()
         self._thread_task: Optional[asyncio.Task] = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     async def __aenter__(self) -> "GoogleRealtimeProvider":
-        self._loop = asyncio.get_running_loop()
-        self._thread_task = asyncio.create_task(self._run_stream_in_thread())
+        loop = asyncio.get_running_loop()
+        self._thread_task = asyncio.create_task(asyncio.to_thread(self._blocking_stream_loop, loop))
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -88,24 +79,19 @@ class GoogleRealtimeProvider(RealtimeSttProvider):
     def events(self) -> AsyncIterator[TranscriptEvent]:
         return self._eq.events()
 
-    async def _run_stream_in_thread(self) -> None:
-        await asyncio.to_thread(self._blocking_stream_loop)
-
-    def _blocking_stream_loop(self) -> None:
-        loop = self._loop
-        if loop is None:
-            raise RuntimeError("GoogleRealtimeProvider: event loop not set")
-
+    def _blocking_stream_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         # The whole body runs under one try/finally so any failure (including
         # SpeechClient construction errors like missing GOOGLE_APPLICATION_CREDENTIALS,
-        # or config errors) is routed through _eq and reaches the receiver
-        # immediately. Otherwise an early raise would skip the sentinel and the
-        # receiver would block until __aexit__ tore the stream down.
+        # or a missing google extra) reaches the receiver immediately. Otherwise an
+        # early raise would skip the sentinel and the receiver would block until
+        # __aexit__ tore the stream down.
+        failure: Exception | None = None
         try:
-            client = speech.SpeechClient()
+            from google.cloud import speech
 
+            client = speech.SpeechClient()
             config = speech.RecognitionConfig(
-                encoding=self._cfg.encoding,  # type: ignore[arg-type]
+                encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,  # type: ignore[arg-type]
                 sample_rate_hertz=self._cfg.sample_rate,  # type: ignore[arg-type]
                 language_code=self._cfg.language,  # type: ignore[arg-type]
             )
@@ -122,38 +108,32 @@ class GoogleRealtimeProvider(RealtimeSttProvider):
                     yield speech.StreamingRecognizeRequest(audio_content=chunk)  # type: ignore[arg-type]
 
             responses = client.streaming_recognize(streaming_config, request_iter())  # type: ignore[arg-type]
-
-            first_response_logged = False
-            for resp in responses:
-                # Note: Google is very verbose sending partial response after every
-                # submitted chunk. So we do not display them by default as it creates a LOT of debug.
-                # logger.debug("[STT] Google response:\n%r", resp)
-
+            for response_index, response in enumerate(responses):
                 # The first response (even an empty one) proves the gRPC stream is live.
                 # Logged at INFO so an apparent hang can be told apart from a never-connected stream.
-                if not first_response_logged:
+                if response_index == 0:
                     logger.info("[STT] Google: first response received, stream is live.")
-                    first_response_logged = True
+                self._publish_results(response, loop)
 
-                # resp.results is a repeated field; iterate it.
-                for result in getattr(resp, "results", ()):
-                    if not result.alternatives:
-                        continue
-                    text = (result.alternatives[0].transcript or "").strip()
-                    if not text:
-                        continue
-                    is_final = bool(getattr(result, "is_final", False))
-                    if is_final:
-                        logger.debug("[STT] Google: final transcript received.")
-                    asyncio.run_coroutine_threadsafe(
-                        self._eq.put(TranscriptEvent(text=text, is_final=is_final)),
-                        loop,
-                    ).result()
-
-        except Exception as e:
-            logger.exception("[STT] Google streaming crashed: %r", e)
-            self._eq._error = e
+        except Exception as error:
+            logger.exception("[STT] Google streaming crashed: %r", error)
+            failure = error
         finally:
-            # Thread-safe sentinel: schedule on the event loop since asyncio.Queue is not thread-safe
-            asyncio.run_coroutine_threadsafe(self._eq.put_sentinel_async(), loop).result()
-            self._closed.set()
+            # asyncio.Event is not thread-safe. Scheduled before the sentinel, so a
+            # consumer that sees the stream end also sees send_audio refuse audio.
+            loop.call_soon_threadsafe(self._closed.set)
+            self._eq.finish_from_thread(loop, failure)
+
+    def _publish_results(self, response, loop: asyncio.AbstractEventLoop) -> None:
+        for result in response.results:
+            if not result.alternatives:
+                continue
+            text = result.alternatives[0].transcript.strip()
+            if not text:
+                continue
+            if result.is_final:
+                logger.debug("[STT] Google: final transcript received.")
+            asyncio.run_coroutine_threadsafe(
+                self._eq.put(TranscriptEvent(text=text, is_final=result.is_final)),
+                loop,
+            ).result()
