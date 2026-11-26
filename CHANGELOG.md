@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **Provider SDK minimums**: `elevenlabs>=2.80.0`, `speechmatics-rt>=1.3.0`, `google-cloud-speech>=2.41.0` and `google-genai>=3.6.1`.
 - **`SpeechmaticsSttConfig.model`** replaces `operating_point` and reaches `TranscriptionConfig.model`, since `speechmatics-rt` deprecates `operating_point`. The default stays `"enhanced"`; `"standard"` selects the basic model.
 
 ## [0.3.0] - 2026-09-19
