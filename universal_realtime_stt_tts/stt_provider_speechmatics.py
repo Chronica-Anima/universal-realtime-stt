@@ -22,7 +22,8 @@ class SpeechmaticsSttConfig:
     # the SDK choose: SPEECHMATICS_RT_URL if set, otherwise its EU default.
     base_url: str | None = None
     language: str = STT_LANGUAGE_ISO_639_1
-    operating_point: str = "enhanced"
+    # "standard" or "enhanced"; the SDK's Model enum lists the rest.
+    model: str = "enhanced"
     max_delay_s: float = STT_VAD_SILENCE_THRESHOLD_S
     # "fixed" or "flexible". None lets the server apply its own default, which is
     # "flexible": with enable_entities on, it may run past max_delay to finish an entity.
@@ -47,7 +48,7 @@ class SpeechmaticsSttProvider:
         from speechmatics.rt import (
             AsyncClient, ServerMessageType, TranscriptionConfig,
             AudioFormat, AudioEncoding, ConversationConfig,
-            SpeakerDiarizationConfig, StaticKeyAuth, OperatingPoint,
+            SpeakerDiarizationConfig, StaticKeyAuth, Model,
         )
 
         self._client = AsyncClient(
@@ -93,7 +94,7 @@ class SpeechmaticsSttProvider:
                 enable_partials=True,
                 max_delay=self._cfg.max_delay_s,
                 max_delay_mode=self._cfg.max_delay_mode,
-                operating_point=OperatingPoint(self._cfg.operating_point),
+                model=Model(self._cfg.model),
                 enable_entities=True,
                 diarization=self._cfg.diarization if self._cfg.diarization != "none" else None,
                 speaker_diarization_config=diarization_cfg,

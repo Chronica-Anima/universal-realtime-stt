@@ -122,6 +122,7 @@ async def transcribe_and_diff(
         realtime_factor: float = 1.0,
         silence_s: float = 2.0,
         custom_metric_fn: Optional[Callable[[str, str], Awaitable[CustomMetricResult]]] = None,
+        provider_name: Optional[str] = None,
 ) -> DiffReport:
     """
     Transcribe a WAV file and compare against ground-truth text.
@@ -142,11 +143,13 @@ async def transcribe_and_diff(
         custom_metric_fn: Optional async callable (expected, got) -> CustomMetricResult.
             When supplied, the result is embedded in the DiffReport and shown in the
             HTML report and TSV export. See helpers/semantic_understanding.py for an example.
+        provider_name: Label in the HTML report; defaults to the provider's class name.
+            Pass one when the same class runs with different models.
 
     Returns:
         DiffReport with accuracy metrics and paths.
     """
-    provider_name = provider.__class__.__name__
+    provider_name = provider_name or provider.__class__.__name__
 
     transcript_raw = await transcribe_wav_realtime(
         provider,

@@ -474,6 +474,14 @@ class TestSpeechmaticsEndpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(config.max_delay, 1.4)
         self.assertEqual(config.max_delay_mode, "fixed")
 
+    async def test_model_reaches_the_transcription_config(self) -> None:
+        config = await self._transcription_config(model="standard")
+        self.assertEqual(config.to_dict()["model"], "standard")
+        self.assertNotIn("operating_point", config.to_dict())
+
+    async def test_default_model_is_enhanced(self) -> None:
+        self.assertEqual((await self._transcription_config()).to_dict()["model"], "enhanced")
+
     async def test_unset_max_delay_mode_defers_to_server(self) -> None:
         self.assertIsNone((await self._transcription_config()).max_delay_mode)
 

@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
 
+### Added
+
+- **ElevenLabs Scribe v3 Live in the benchmark**: `ElevenLabsV3` runs `ElevenLabsSttConfig(model="scribe_v3_live")` with the same VAD settings as `ElevenLabs` (`scribe_v2_realtime`), and `tests/test_stt.py` has `test_eleven_labs_v3`.
+- **`transcribe_and_diff(provider_name=...)`**: labels the HTML report. The benchmark passes its provider name, so runs of one provider class with different models stay distinguishable.
+
+### Changed
+
+- **`SpeechmaticsSttConfig.model`** replaces `operating_point` and reaches `TranscriptionConfig.model`, since `speechmatics-rt` deprecates `operating_point`. The default stays `"enhanced"`; `"standard"` selects the basic model.
+
 ## [0.3.0] - 2026-09-19
 
 ### Added
