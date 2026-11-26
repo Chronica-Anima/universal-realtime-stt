@@ -6,7 +6,7 @@ Wire up one async task, push PCM chunks into an input queue, and consume `Transc
 
 ## Features
 
-- **Realtime STT** across multiple providers: Cartesia (Ink-Whisper), Deepgram (Nova-3), ElevenLabs (Scribe v2 Realtime), Google Cloud Speech-to-Text, Speechmatics, and Gemini Live.
+- **Realtime STT** across multiple providers: Cartesia (Ink-Whisper), Deepgram (Nova-3), ElevenLabs (Scribe v2 Realtime and Scribe v3 Live), Google Cloud Speech-to-Text, Speechmatics, and Gemini Live.
 - **Realtime TTS** via ElevenLabs (PCM stream output).
 - **Unified async protocol** (`RealtimeSttProvider`, `RealtimeTtsProvider`) using `typing.Protocol`. Implement a new provider by satisfying the methods, no inheritance required.
 - **Queue-based streaming**: audio in, `TranscriptEvent` out. `None` sentinels signal end-of-stream.
@@ -153,7 +153,7 @@ from universal_realtime_stt_tts.stt_provider_speechmatics import SpeechmaticsStt
 config = SpeechmaticsSttConfig(
     api_key="...",
     language="en",
-    operating_point="enhanced",
+    model="enhanced",  # or "standard"
     diarization="speaker",
     base_url="wss://us.rt.speechmatics.com/v2",  # regional endpoint; omit for the SDK default
 )

@@ -474,6 +474,14 @@ class TestSpeechmaticsEndpoint(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(config.max_delay, 1.4)
         self.assertEqual(config.max_delay_mode, "fixed")
 
+    async def test_model_reaches_the_transcription_config(self) -> None:
+        config = await self._transcription_config(model="standard")
+        self.assertEqual(config.to_dict()["model"], "standard")
+        self.assertNotIn("operating_point", config.to_dict())
+
+    async def test_default_model_is_enhanced(self) -> None:
+        self.assertEqual((await self._transcription_config()).to_dict()["model"], "enhanced")
+
     async def test_unset_max_delay_mode_defers_to_server(self) -> None:
         self.assertIsNone((await self._transcription_config()).max_delay_mode)
 
@@ -663,3 +671,28 @@ class TestRecvGuard(unittest.IsolatedAsyncioTestCase):
         async with eq.recv_guard("Test", closed, on_close=on_close):
             raise ValueError("fail")
         self.assertIsNotNone(observed_error)
+
+
+# ---------------------------------------------------------------------------
+# Gemini clients target the API version that serves preview models
+# ---------------------------------------------------------------------------
+
+class _ClientConstructed(Exception):
+    """Stops the provider right after it builds its client, so no network call happens."""
+
+
+class TestGeminiApiVersion(unittest.IsolatedAsyncioTestCase):
+
+    async def test_live_provider_client_uses_v1beta(self) -> None:
+        from universal_realtime_stt_tts.stt_provider_gemini_live import GeminiLiveProvider, GeminiLiveSttConfig
+        with unittest.mock.patch("google.genai.Client", side_effect=_ClientConstructed) as client_class:
+            with self.assertRaises(_ClientConstructed):
+                await GeminiLiveProvider(GeminiLiveSttConfig(api_key="fake-key")).__aenter__()
+        self.assertEqual(client_class.call_args.kwargs["http_options"].api_version, "v1beta")
+
+    async def test_live_provider_api_version_is_configurable(self) -> None:
+        from universal_realtime_stt_tts.stt_provider_gemini_live import GeminiLiveProvider, GeminiLiveSttConfig
+        with unittest.mock.patch("google.genai.Client", side_effect=_ClientConstructed) as client_class:
+            with self.assertRaises(_ClientConstructed):
+                await GeminiLiveProvider(GeminiLiveSttConfig(api_key="fake-key", api_version="v1")).__aenter__()
+        self.assertEqual(client_class.call_args.kwargs["http_options"].api_version, "v1")

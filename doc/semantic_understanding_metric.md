@@ -101,7 +101,7 @@ The LLM is instructed to return:
 |---|---|---|
 | `GEMINI_API_KEY` | Yes (for this metric) | Gemini API key. If absent, the metric is skipped with a warning. |
 
-The model is hardcoded to `gemini-3-pro-preview` in `helpers/semantic_understanding.py`.
+The model is hardcoded to `gemini-4-hydrogen` in `helpers/semantic_understanding.py`.
 
 Add to your `.env`:
 ```

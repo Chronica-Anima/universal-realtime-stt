@@ -4,7 +4,7 @@
 Tomáš Kubeš, Iveta Zimmerová, Ondřej Ulrich; Chronica Anima: www.chronicaanima.com, tomas.kubes@chronicaanima.com
 
 ## Abstract
-We evaluate six commercial realtime STT providers on 91 voices (~2 hours) of elderly Czech speakers from an open dataset. Average Word Error Rate across providers is 38%, with the best provider achieving 17%. We propose Semantic Error Rate (SER), an LLM-based metric that measures information preservation rather than surface accuracy, and show that it better reflects transcript usability for morphologically rich languages. All code and benchmarking tools are released as open-source.
+We evaluate six commercial realtime STT providers on 91 voices (~2 hours) of elderly Czech speakers from an open dataset. Average Word Error Rate across providers is 37%, with the best provider achieving 18%. We propose Semantic Error Rate (SER), an LLM-based metric that measures information preservation rather than surface accuracy, and show that it better reflects transcript usability for morphologically rich languages. All code and benchmarking tools are released as open-source.
 
 ---
 
@@ -34,16 +34,16 @@ All providers receive identical input: audio streamed in 200 ms chunks at 1x rea
 
 ### Providers and models tested
 
-| Provider          |  Model                          |
-|-------------------|---------------------------------|
-| Cartesia          | 					ink-whisper                |
-| Deepgram          | 				nova-3                      |
-| ElevenLabs	       | 			scribe_v2_realtime           |
-| Google Gemini	    | 		gemini-3.1-flash-live-preview |
-| Google Cloud STT	 | 	v1 API, default model          |
-| Speechmatics	     | 		Enhanced (operating point)    |
+| Provider         | Model                             |
+|------------------|:----------------------------------|
+| Cartesia         | ink-whisper                       |
+| Deepgram         | nova-3                            |
+| ElevenLabs	    | scribe_v2_realtime/scribe_v3_live |
+| Google Gemini	| gemini-3.1-flash-live-preview     |
+| Google Cloud STT| v1 API, default model             |
+| Speechmatics	  | basic/enhanced                    |
 
-All models represent the best available realtime offering from each provider as of May 2026, with one exception: Google Cloud STT uses the v1 streaming API with its default model. Google's newer Chirp 3 model (v2 API) was not tested due to an incompatible API migration; Google's results may therefore understate their current best capability.
+All models represent the best available realtime offering from each provider as of May 2026 (ElevenLabs as of November 2026), with one exception: Google Cloud STT uses the v1 streaming API with its default model. Google's newer Chirp 3 model (v2 API) was not tested due to an incompatible API migration; Google's results may therefore understate their current best capability. ElevenLabs and Speechmatics are each shown with two models.
 
 ### Text Normalization
 
@@ -84,27 +84,31 @@ Lower is better. A SER of 0% means all semantic information from the reference w
 
 ## Results
 
+Averages over the 87 recordings on which at least one provider reached 40% WER or better.
+
 | Provider      | Model                          | WER | CER | SER |
 |---------------|--------------------------------|-----|-----|-----|
-| Cartesia	     | ink-whisper                    | 36% | 25% | 27% |
-| Deepgram	     | nova-3                         | 41% | 30% | 34% |
-| ElevenLabs    | 	scribe_v2_realtime            | 37% | 26% | 29% |
-| Google Gemini | 	gemini-3.1-flash-live-preview | 61% | 58% | 56% |
-| Google Cloud  | 	v1 API, default	              | 33% | 21% | 35% |
-| Speechmatics  | 	Enhanced                      | 17% | 8%  | 16% |
-| Average       |                                | 38% | 28% | 33% |
+| Cartesia	     | ink-whisper                    | 39% | 28% | 35% |
+| Deepgram	     | nova-3                         | 43% | 33% | 41% |
+| ElevenLabs    | scribe_v2_realtime            | 42% | 30% | 36% |
+| ElevenLabs    | scribe_v3_live                | 18% | 10% | 16% |
+| Google Gemini | gemini-3.1-flash-live-preview | 64% | 61% | 60% |
+| Google Cloud  | v1 API, default	              | 36% | 25% | 39% |
+| Speechmatics  | Basic                         | 21% | 12% | 21% |
+| Speechmatics  | Enhanced                      | 19% | 10% | 18% |
+| Average       | best model per provider        | 37% | 28% | 35% |
 
 ### Key Findings
 
-- Speechmatics is the clear leader, outperforming all others on every metric.
-- Average WER of 38% means more then every third word is incorrect on average, far from marketed accuracy claims.
+- ElevenLabs and Speechmatics lead by a wide margin.
+- Average WER of 37% means more than every third word is incorrect on average, far from marketed accuracy claims.
 - SER is mostly lower than WER across all providers, confirming that semantic information is more robust than surface-level word accuracy suggests for Czech.
 - WER and SER rankings diverge slightly. This demonstrates that word accuracy and information preservation are distinct qualities, but that given simplicity in its computation, WER is a reasonable, albeit not perfect proxy even for Czech.
 
 
 ## Discussion + Disclaimer
 
-This benchmark represents a snapshot of provider capabilities as of 2026-05-04. Provider models improve continuously; results may shift with future updates.
+This benchmark represents a snapshot of provider capabilities as of 2026-05-04, with ElevenLabs scribe_v3_live measured on 2026-11-26, Speechmatics Enhanced on 2026-10-30 and Speechmatics Basic on 2026-08-20. Provider models improve continuously; results may shift with future updates.
 
 The authors have received no incentives or benefits from any of the tested providers. All accounts except ElevenLabs used standard free trial credits available at sign-up.
 

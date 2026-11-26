@@ -105,6 +105,10 @@ class TestStt(unittest.IsolatedAsyncioTestCase):
         config = ElevenLabsSttConfig(api_key=getenv("ELEVENLABS_API_KEY"))
         await self._runner(ElevenLabsSttProvider, config)
 
+    async def test_eleven_labs_v3(self) -> None:
+        config = ElevenLabsSttConfig(api_key=getenv("ELEVENLABS_API_KEY"), model="scribe_v3_live")
+        await self._runner(ElevenLabsSttProvider, config)
+
     async def test_google(self) -> None:
         # Google uses Application Default Credentials (ADC), not an API key.
         # Set GOOGLE_APPLICATION_CREDENTIALS env var to your service account JSON.

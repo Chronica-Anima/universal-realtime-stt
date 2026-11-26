@@ -33,11 +33,23 @@ pytest tests/test_tts.py -v                           # ElevenLabs TTS, live
 python benchmark.py                                   # all configured providers in parallel
 python benchmark.py --providers Speechmatics,Deepgram
 python -m helpers.collect_reports                     # TSV summary of the HTML diffs in out/
+python -m helpers.report_summary "Label=out/<run>_benchmark.tsv:Provider" ...   # report table over the meaningful assets
 ```
 
-The provider tests are `test_cartesia`, `test_deepgram`, `test_eleven_labs`, `test_google`, `test_speechmatics`, `test_gemini_live` and `test_speechmatics_semantics`. A live test with a missing key or package fails rather than skips. The benchmark skips a provider whose key is missing; its names are `Cartesia`, `Deepgram`, `ElevenLabs`, `Google`, `Speechmatics` and `GeminiLive`.
+The provider tests are `test_cartesia`, `test_deepgram`, `test_eleven_labs`, `test_eleven_labs_v3`, `test_google`, `test_speechmatics`, `test_gemini_live` and `test_speechmatics_semantics`. A live test with a missing key or package fails rather than skips. The benchmark skips a provider whose key is missing; its names are `Cartesia`, `Deepgram`, `ElevenLabs` (`scribe_v2_realtime`), `ElevenLabsV3` (`scribe_v3_live`), `Google`, `Speechmatics` (`enhanced` model) and `GeminiLive`.
+
+A full benchmark run streams every asset in real time and is billed by each provider. Run only the providers a question needs, with `--providers`, and never the full set unless explicitly asked.
 
 Output: HTML diffs and `<timestamp>_benchmark.tsv` in `out/`, logs in `log/` (DEBUG for `universal_realtime_stt_tts.*`, INFO for third-party libraries).
+
+### Published numbers versus raw benchmark output
+
+The benchmark always runs every asset. Published figures then average only the meaningful assets, so a plain average over a raw `*_benchmark.tsv` does not match them, and the gap is not provider drift. Recordings no provider transcribes reasonably say nothing about the providers.
+
+- `doc/report.md` counts an asset when at least one of the reported runs reached 40% WER or better on it. `python -m helpers.report_summary` applies that rule to the runs it is given as `LABEL=PATH[:PROVIDER]` and prints the per-provider table, so the same runs always give the same table. No list of asset names is stored in this repository; asset names belong only in the private `assets/` repository.
+- The poster (May 2026) averaged a 65-file subset built by hand in a spreadsheet. It dropped the unintelligible recordings and every file Speechmatics Enhanced had no result for after running out of quota. Its numbers are not comparable with `doc/report.md`.
+
+To compare a new run with a published figure, summarize it together with the published runs.
 
 ## Architecture
 

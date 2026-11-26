@@ -118,6 +118,9 @@ def build_provider_specs() -> list[ProviderSpec]:
     key = getenv("ELEVENLABS_API_KEY")
     if key:
         specs.append(ProviderSpec("ElevenLabs", ElevenLabsSttProvider, ElevenLabsSttConfig(api_key=key)))
+        specs.append(ProviderSpec(
+            "ElevenLabsV3", ElevenLabsSttProvider, ElevenLabsSttConfig(api_key=key, model="scribe_v3_live"),
+        ))
     else:
         logger.warning("ELEVENLABS_API_KEY not set — skipping ElevenLabs.")
 
@@ -224,6 +227,7 @@ async def _run_single_file(
                     realtime_factor=TEST_REALTIME_FACTOR,
                     silence_s=FINAL_SILENCE_S,
                     custom_metric_fn=custom_metric_fn,
+                    provider_name=spec.name,
                 ),
                 timeout=timeout_s,
             )
@@ -332,8 +336,7 @@ async def main(requested_names: list[str] | None = None) -> None:
             logger.warning(
                 "GEMINI_API_KEY is set but google-genai is not installed — "
                 "semantic understanding metric disabled. "
-                "Install it with: pip install google-genai  "
-                "(or uncomment google-genai in requirements.txt and run: pip install -r requirements.txt)"
+                "Install it with: pip install -e \".[gemini]\""
             )
     else:
         logger.warning("GEMINI_API_KEY not set — semantic understanding metric disabled.")

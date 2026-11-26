@@ -20,7 +20,7 @@ from helpers.llm_api import LLMBasicClient
 
 logger = getLogger(__name__)
 
-_MODEL_ID = "gemini-3.1-pro-preview"
+_MODEL_ID = "gemini-4-hydrogen"
 
 _SYSTEM_PROMPT = """\
 Vyhodnocuješ přesnost převodu řeči na text (STT) pro české audio.
