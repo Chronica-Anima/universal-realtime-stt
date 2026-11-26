@@ -9,11 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Added
 
 - **ElevenLabs Scribe v3 Live in the benchmark**: `ElevenLabsV3` runs `ElevenLabsSttConfig(model="scribe_v3_live")` with the same VAD settings as `ElevenLabs` (`scribe_v2_realtime`), and `tests/test_stt.py` has `test_eleven_labs_v3`.
+- **`helpers/report_summary.py`**: averages benchmark TSVs per provider over the report file set `doc/report-files.txt`, and derives that set from a WER cutoff. The set holds the assets on which at least one provider reached 40% WER or better.
 - **`transcribe_and_diff(provider_name=...)`**: labels the HTML report. The benchmark passes its provider name, so runs of one provider class with different models stay distinguishable.
 
 ### Changed
 
 - **Provider SDK minimums**: `elevenlabs>=2.80.0`, `speechmatics-rt>=1.3.0`, `google-cloud-speech>=2.41.0` and `google-genai>=3.6.1`.
+- **Gemini clients use the `v1beta` API**: `GeminiLiveSttConfig.api_version` and `LLMBasicClient(api_version=...)` default to `v1beta`, where the preview models live; google-genai 3.x would otherwise call `v1` and get HTTP 404.
 - **`SpeechmaticsSttConfig.model`** replaces `operating_point` and reaches `TranscriptionConfig.model`, since `speechmatics-rt` deprecates `operating_point`. The default stays `"enhanced"`; `"standard"` selects the basic model.
 
 ## [0.3.0] - 2026-09-19

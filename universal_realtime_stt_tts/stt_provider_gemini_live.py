@@ -70,6 +70,8 @@ _END_AUDIO_DRAIN_S = 1.0
 class GeminiLiveSttConfig:
     api_key: str
     model: str = "gemini-3.1-flash-live-preview"
+    # Preview models are served on v1beta only; google-genai 3.x defaults to v1.
+    api_version: str = "v1beta"
     sample_rate: int = AUDIO_SAMPLE_RATE
     input_volume_threshold: float | None = STT_INPUT_VOLUME_THRESHOLD  # no Gemini Live equivalent; ignored
 
@@ -121,7 +123,10 @@ class GeminiLiveProvider:
                 "Install it with: pip install google-genai"
             ) from exc
 
-        client = genai.Client(api_key=self._cfg.api_key)
+        client = genai.Client(
+            api_key=self._cfg.api_key,
+            http_options=genai.types.HttpOptions(api_version=self._cfg.api_version),
+        )
 
         # IMPORTANT: response_modalities MUST be ["AUDIO"] — not ["TEXT"].
         # gemini-3.1-flash-live-preview only supports AUDIO output.

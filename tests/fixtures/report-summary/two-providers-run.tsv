@@ -1,0 +1,7 @@
+provider	file	character_error_rate	word_error_rate	custom_metric	diff_report	error
+Alpha	clear.wav	10.0	20.0	5.0	alpha-clear.diff.html
+Alpha	murky.wav	70.0	90.0	80.0	alpha-murky.diff.html
+Alpha	borderline.wav	30.0	60.0		alpha-borderline.diff.html
+Beta	clear.wav	20.0	40.0	15.0	beta-clear.diff.html
+Beta	murky.wav					fixture provider ran out of quota
+Beta	borderline.wav	25.0	50.0	30.0	beta-borderline.diff.html

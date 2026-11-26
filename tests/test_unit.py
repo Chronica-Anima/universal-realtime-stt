@@ -671,3 +671,34 @@ class TestRecvGuard(unittest.IsolatedAsyncioTestCase):
         async with eq.recv_guard("Test", closed, on_close=on_close):
             raise ValueError("fail")
         self.assertIsNotNone(observed_error)
+
+
+# ---------------------------------------------------------------------------
+# Gemini clients target the API version that serves preview models
+# ---------------------------------------------------------------------------
+
+class _ClientConstructed(Exception):
+    """Stops the provider right after it builds its client, so no network call happens."""
+
+
+class TestGeminiApiVersion(unittest.IsolatedAsyncioTestCase):
+
+    async def test_live_provider_client_uses_v1beta(self) -> None:
+        from universal_realtime_stt_tts.stt_provider_gemini_live import GeminiLiveProvider, GeminiLiveSttConfig
+        with unittest.mock.patch("google.genai.Client", side_effect=_ClientConstructed) as client_class:
+            with self.assertRaises(_ClientConstructed):
+                await GeminiLiveProvider(GeminiLiveSttConfig(api_key="fake-key")).__aenter__()
+        self.assertEqual(client_class.call_args.kwargs["http_options"].api_version, "v1beta")
+
+    async def test_live_provider_api_version_is_configurable(self) -> None:
+        from universal_realtime_stt_tts.stt_provider_gemini_live import GeminiLiveProvider, GeminiLiveSttConfig
+        with unittest.mock.patch("google.genai.Client", side_effect=_ClientConstructed) as client_class:
+            with self.assertRaises(_ClientConstructed):
+                await GeminiLiveProvider(GeminiLiveSttConfig(api_key="fake-key", api_version="v1")).__aenter__()
+        self.assertEqual(client_class.call_args.kwargs["http_options"].api_version, "v1")
+
+    def test_semantic_metric_client_uses_v1beta(self) -> None:
+        from helpers.llm_api import LLMBasicClient
+        with unittest.mock.patch("helpers.llm_api.genai.Client") as client_class:
+            LLMBasicClient(api_key="fake-key", model_id="gemini-3.1-pro-preview")
+        self.assertEqual(client_class.call_args.kwargs["http_options"].api_version, "v1beta")
